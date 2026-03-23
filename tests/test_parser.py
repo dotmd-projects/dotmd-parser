@@ -387,7 +387,7 @@ class TestBuildGraph(unittest.TestCase):
         graph = build_graph(str(self.root))
         missing = [w for w in graph["warnings"] if w["type"] == "missing"]
         self.assertEqual(len(missing), 1)
-        self.assertIn("Read参照先", missing[0]["message"])
+        self.assertIn("Read reference target", missing[0]["message"])
 
     def test_read_ref_coexists_with_include(self):
         """@includeとRead参照が同一ファイルに共存する"""
@@ -597,7 +597,7 @@ class TestSummary(unittest.TestCase):
     def test_summary_runs(self):
         graph = {"nodes": [{"id": "a.md", "type": "skill"}], "edges": [], "warnings": []}
         result = summary(graph)
-        self.assertIn("ノード数", result)
+        self.assertIn("Nodes", result)
 
     def test_summary_with_placeholders(self):
         """プレースホルダーがある場合に表示される"""
@@ -607,7 +607,7 @@ class TestSummary(unittest.TestCase):
             "warnings": [],
         }
         result = summary(graph)
-        self.assertIn("プレースホルダー", result)
+        self.assertIn("Placeholders", result)
         self.assertIn("bar", result)
         self.assertIn("foo", result)
 
