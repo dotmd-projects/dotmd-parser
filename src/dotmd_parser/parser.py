@@ -558,7 +558,7 @@ def summary(graph: dict) -> str:
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
+def main():
     import sys
 
     args = sys.argv[1:]
@@ -568,5 +568,9 @@ if __name__ == "__main__":
     target = args[0]
     graph = build_graph(target)
     print(summary(graph))
-    print("\n--- JSON出力 ---")
+    print("\n--- JSON ---")
     print(json.dumps(graph, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

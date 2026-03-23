@@ -1,90 +1,123 @@
 # dotmd-parser
 
-`.md` ファイルの依存グラフパーサー。`@include` / `@delegate` ディレクティブや `Read` 参照を解析し、ファイル間の依存関係をグラフとして構築します。
+[![PyPI version](https://img.shields.io/pypi/v/dotmd-parser)](https://pypi.org/project/dotmd-parser/)
+[![Python](https://img.shields.io/pypi/pyversions/dotmd-parser)](https://pypi.org/project/dotmd-parser/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## インストール
+> [日本語版 README はこちら](README.ja.md)
+
+Dependency graph parser for `.md` skill files — built for AI agent prompt engineering with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and similar tools.
+
+## Why dotmd-parser?
+
+As AI agent projects grow, `SKILL.md` files start referencing each other via `@include` and `@delegate` directives. Without tooling, you're left manually tracing dependencies to answer basic questions:
+
+- *"Which files break if I edit `shared/role.md`?"*
+- *"Is there a circular reference hiding in my skill tree?"*
+- *"What `{{variables}}` are still unresolved after expansion?"*
+
+**dotmd-parser** solves this by parsing your `.md` files into a dependency graph — automatically detecting directives, runtime references, and template placeholders. One function call gives you the full picture.
+
+## Comparison
+
+| Capability | Manual / grep | dotmd-parser |
+|---|---|---|
+| Find `@include` / `@delegate` references | `grep -r "@include"` — flat list, no context | Structured graph with node types and edge metadata |
+| Detect circular references | Hope you notice before the agent loops | Automatic detection with full cycle path in warnings |
+| Reverse dependency ("what breaks?") | Manually trace every file | `dependents_of(graph, "shared/role.md")` — one call |
+| Expand `@include` to final text | Copy-paste by hand | `resolve("SKILL.md", variables={...})` — recursive expansion |
+| Find unresolved `{{variables}}` | `grep "{{" *.md` — noisy, no dedup | Deduplicated list per node and after expansion |
+| Missing file detection | Runtime failure | Warnings at parse time with exact paths |
+
+## Installation
 
 ```bash
 pip install dotmd-parser
 ```
 
-または開発用:
-
-```bash
-git clone https://github.com/dotmd-projects/dotmd-parser.git
-cd dotmd-parser
-pip install -e .
-```
-
-## 主要API
+## Quick Start
 
 ```python
 from dotmd_parser import build_graph, resolve, dependents_of, summary
 ```
 
-### build_graph — 依存グラフ構築
+### build_graph — Build a dependency graph
 
 ```python
 graph = build_graph("./my-skill/")
-# or
+# or from a specific file
 graph = build_graph("./my-skill/SKILL.md")
 ```
 
-返り値:
+Returns:
+
 ```json
 {
-  "nodes": [{"id": "...", "type": "skill", "missing": false, "placeholders": []}],
-  "edges": [{"from": "...", "to": "...", "type": "include", "parallel": false}],
+  "nodes": [
+    {"id": "/abs/path/to/SKILL.md", "type": "skill", "missing": false, "placeholders": []}
+  ],
+  "edges": [
+    {"from": "...", "to": "...", "type": "include", "parallel": false}
+  ],
   "warnings": []
 }
 ```
 
-### resolve — @include 展開
+### resolve — Expand @include directives
 
 ```python
 result = resolve("./prompts/main.md", variables={"name": "Alice"})
-print(result["content"])       # 展開後のテキスト
-print(result["placeholders"])  # 未解決の {{変数}} リスト
+
+print(result["content"])       # Fully expanded text
+print(result["placeholders"])  # Unresolved {{variable}} names
+print(result["warnings"])      # Circular refs, missing files, etc.
 ```
 
-### dependents_of — 逆依存クエリ
+### dependents_of — Reverse dependency query
 
 ```python
-# shared/role.md を変更したら影響を受けるファイル一覧
+# "If I change shared/role.md, what else breaks?"
 affected = dependents_of(graph, "/abs/path/to/shared/role.md")
 ```
 
-### summary — 概要表示
+### summary — Human-readable overview
 
 ```python
 print(summary(graph))
-# ノード数: 5  (agent:1, shared:2, skill:1, reference:1)
-# エッジ数: 4  (include:3, read-ref:1)
-# 警告数:  0
+# Nodes: 5  (agent:1, shared:2, skill:1, reference:1)
+# Edges: 4  (include:3, read-ref:1)
+# Warnings: 0
 ```
 
-## ディレクティブ仕様
+## Supported Directives
 
-| ディレクティブ | 説明 |
+| Directive | Description |
 |---|---|
-| `@include path/to/file.md` | ファイルをインライン展開 |
-| `@delegate path/to/agent.md` | エージェントに委譲（展開しない） |
-| `@delegate path/to/agent.md --parallel` | 並列実行フラグ付き委譲 |
-| `Read \`path/to/file.md\`` | ランタイム参照（展開しない、グラフには記録） |
+| `@include path/to/file.md` | Inline expansion — file content is inserted at this position |
+| `@delegate path/to/agent.md` | Agent delegation — recorded in graph but not expanded |
+| `@delegate path/to/agent.md --parallel` | Parallel delegation with `--parallel` flag |
+| `` Read `path/to/file.md` `` | Runtime reference — not expanded, but tracked in the graph |
 
 ## CLI
 
 ```bash
+# Installed as a command
+dotmd-parser ./my-skill/
+
+# Or via Python module
 python -m dotmd_parser.parser ./my-skill/
 ```
 
-## テスト
+## Development
 
 ```bash
+git clone https://github.com/dotmd-projects/dotmd-parser.git
+cd dotmd-parser
+pip install -e .
 pip install pytest
 pytest tests/ -v
 ```
 
-## ライセンス
+## License
 
 MIT
