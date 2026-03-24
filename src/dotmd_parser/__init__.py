@@ -8,7 +8,7 @@ API:
     from dotmd_parser import build_graph, resolve, dependents_of, summary
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from dotmd_parser.parser import (
     build_graph,
