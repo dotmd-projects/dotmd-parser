@@ -6,13 +6,13 @@
 
 > [English README](README.md)
 
-`.md` ファイルの依存グラフパーサー。`@include` / `@delegate` ディレクティブや `Read` 参照を解析し、ファイル間の依存関係をグラフとして構築します。
+`.md` ファイルの依存グラフパーサー。`@include` / `@delegate` / `@ref` ディレクティブやレガシー `Read` 参照を解析し、ファイル間の依存関係をグラフとして構築します。
 
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) などの AI エージェントにおけるプロンプトエンジニアリングのために設計されています。
 
 ## なぜ dotmd-parser？
 
-AI エージェントのプロジェクトが大きくなると、`SKILL.md` ファイル同士が `@include` や `@delegate` で参照し合うようになります。ツールなしでは、こうした基本的な疑問に手作業で答えるしかありません：
+AI エージェントのプロジェクトが大きくなると、`.md` ファイル同士が `@include`、`@delegate`、`@ref` で参照し合うようになります。ツールなしでは、こうした基本的な疑問に手作業で答えるしかありません：
 
 - *「`shared/role.md` を編集したら、どのファイルに影響がある？」*
 - *「スキルツリーに循環参照が隠れていないか？」*
@@ -24,7 +24,7 @@ AI エージェントのプロジェクトが大きくなると、`SKILL.md` フ
 
 | 機能 | 手動 / grep | dotmd-parser |
 |---|---|---|
-| `@include` / `@delegate` の参照検索 | `grep -r "@include"` — フラットなリスト | ノード型・エッジメタデータ付きの構造化グラフ |
+| `@include` / `@delegate` / `@ref` の参照検索 | `grep -r "@include"` — フラットなリスト | ノード型・エッジメタデータ付きの構造化グラフ |
 | 循環参照の検出 | エージェントがループするまで気づかない | 完全なサイクルパス付きで自動検出 |
 | 逆依存（「何が壊れる？」） | ファイルを一つずつ手動で追跡 | `dependents_of(graph, "shared/role.md")` で一発 |
 | `@include` を最終テキストに展開 | コピペで手動展開 | `resolve("SKILL.md", variables={...})` で再帰展開 |
@@ -61,7 +61,31 @@ graph = build_graph("./my-skill/SKILL.md")
 }
 ```
 
+**カスタムノード型マッピング:**
+
+デフォルトではパスのキーワード（`agent`, `shared`, `prompt`, `reference`, `asset`, `template`）からノード型を推定します。`type_map` パラメータで上書き可能です：
+
+```python
+graph = build_graph("./my-skill/", type_map=[
+    ("helper", "utility"),
+    ("core", "foundation"),
+])
+```
+
+**deps.yml サポート:**
+
+ルートディレクトリに `deps.yml` があれば、その依存関係を自動でグラフにマージします：
+
+```yaml
+- path: agents/planner.md
+  includes:
+    - shared/role.md
+    - shared/tools.md
+```
+
 ### resolve — @include 展開
+
+`@include` ディレクティブを再帰的に展開し最終テキストを生成します。`@delegate` と `@ref` 行はそのまま保持されます。
 
 ```python
 result = resolve("./prompts/main.md", variables={"name": "Alice"})
@@ -82,20 +106,36 @@ affected = dependents_of(graph, "/abs/path/to/shared/role.md")
 
 ```python
 print(summary(graph))
-# ノード数: 5  (agent:1, shared:2, skill:1, reference:1)
-# エッジ数: 4  (include:3, read-ref:1)
-# 警告数:  0
+# Nodes: 5  (agent:1, prompt:1, shared:2, skill:1)
+# Edges: 4  (include:2, ref:1, read-ref:1)
+# Warnings: 0
+# Placeholders: name, role
 ```
 
 ## ディレクティブ仕様
 
-| ディレクティブ | 説明 |
+| ディレクティブ | エッジ型 | `resolve()` で展開？ | 説明 |
+|---|---|---|---|
+| `@include path/to/file.md` | `include` | Yes | ファイルをインライン展開 |
+| `@delegate path/to/agent.md` | `delegate` | No | エージェントに委譲（展開しない） |
+| `@delegate path/to/agent.md --parallel` | `delegate` | No | 並列実行フラグ付き委譲 |
+| `@ref path/to/file.md` | `ref` | No | ランタイム参照（展開せずグラフに記録） |
+| `` Read `path/to/file.md` `` | `read-ref` | No | レガシー参照（`@ref` と同じ動作、後方互換のため維持） |
+
+## ユーティリティ関数
+
+低レベルのパース関数もエクスポートされています：
+
+```python
+from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, parse_deps_yml
+```
+
+| 関数 | 説明 |
 |---|---|
-| `@include path/to/file.md` | ファイルをインライン展開 |
-| `@delegate path/to/agent.md` | エージェントに委譲（展開しない） |
-| `@delegate path/to/agent.md --parallel` | 並列実行フラグ付き委譲 |
-| `@ref path/to/file.md` | ランタイム参照（展開せずグラフに記録） |
-| `` Read `path/to/file.md` `` | レガシー参照（`@ref` と同じ動作、後方互換のため維持） |
+| `parse_directives(content)` | `@include` / `@delegate` / `@ref` ディレクティブを抽出 |
+| `parse_read_refs(content)` | レガシー `Read`/`See`/リスト形式の `.md` 参照を抽出（重複排除済み） |
+| `parse_placeholders(content)` | `{{variable}}` プレースホルダー名を抽出（重複排除済み） |
+| `parse_deps_yml(content)` | `deps.yml` テキストを `{path: [includes]}` 辞書にパース（PyYAML 不要） |
 
 ## CLI
 
@@ -106,6 +146,8 @@ dotmd-parser ./my-skill/
 # Python モジュールとして実行
 python -m dotmd_parser.parser ./my-skill/
 ```
+
+人間が読める概要に続いて、完全な JSON グラフを出力します。
 
 ## 開発
 
