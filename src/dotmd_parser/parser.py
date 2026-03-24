@@ -3,6 +3,11 @@ dotMD — .md skill dependency parser
 Input:  Root directory of a skill (or path to SKILL.md)
 Output: Dictionary with { nodes, edges, warnings }
 
+Directives:
+- @include  path/to/file.md              Inline expansion (content is embedded)
+- @delegate path/to/agent.md [--parallel] Agent delegation (recorded, not expanded)
+- @ref      path/to/file.md              Runtime reference (recorded, not expanded)
+
 Additional features:
 - resolve()            : Recursively expand @include directives and output final text
 - parse_placeholders() : Detect {{variable}} placeholders
@@ -15,19 +20,20 @@ import json
 from pathlib import Path
 
 # Directive patterns
-# @include path/to/file.md
-# @delegate path/to/agent.md
-# @delegate path/to/agent.md --parallel
+# @include  path/to/file.md
+# @delegate path/to/agent.md [--parallel]
+# @ref      path/to/file.md
 DIRECTIVE_PATTERN = re.compile(
-    r'^\s*@(include|delegate)\s+([\w./_-]+\.md)(\s+--parallel)?\s*$',
+    r'^\s*@(include|delegate|ref)\s+([\w./_-]+\.md)(\s+--parallel)?\s*$',
     re.MULTILINE
 )
 
-# Read reference patterns (runtime dependencies — not expanded)
+# Legacy read reference patterns (kept for backward compatibility)
 # Read `path/to/file.md` for ...
 # See `path/to/file.md` for ...
 # - `path/to/file.md` — description
 # Only matches .md files with / in the path (to avoid false positives)
+# NOTE: Prefer @ref over these legacy patterns in new files.
 READ_REF_PATTERN = re.compile(
     r'(?:Read|See)\s+[`"\']([^`"\']*?/[^`"\']+\.md)[`"\']'
     r'|'
@@ -93,7 +99,7 @@ DEFAULT_TYPE_MAP = [
 
 
 def parse_directives(content: str) -> list[dict]:
-    """Extract @include / @delegate directives from file content."""
+    """Extract @include / @delegate / @ref directives from file content."""
     results = []
     for match in DIRECTIVE_PATTERN.finditer(content):
         results.append({
@@ -264,7 +270,24 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
             if edge not in edges:
                 edges.append(edge)
 
-            _walk(target_path, depth + 1)
+            if directive["type"] == "ref":
+                # @ref: record edge and node, but do not recurse
+                if target_rel not in nodes:
+                    is_missing = not target_path.exists()
+                    nodes[target_rel] = {
+                        "id": target_rel,
+                        "type": _infer_node_type(target_path),
+                        "missing": is_missing,
+                        "placeholders": [],
+                    }
+                    if is_missing:
+                        warnings.append({
+                            "type": "missing",
+                            "path": target_rel,
+                            "message": f"@ref target does not exist: {directive['target']}",
+                        })
+            else:
+                _walk(target_path, depth + 1)
 
         # Detect Read references (runtime dependencies — no recursion)
         for read_target in parse_read_refs(content):
@@ -404,7 +427,7 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
 def resolve(file_path: str, variables: dict[str, str] | None = None) -> dict:
     """
     Recursively expand @include directives and generate final text.
-    @delegate lines are left as-is (processed by another agent at runtime).
+    @delegate and @ref lines are left as-is (not expanded).
 
     Args:
         file_path: Path to the starting .md file.
@@ -449,7 +472,7 @@ def resolve(file_path: str, variables: dict[str, str] | None = None) -> dict:
             directive_type = match.group(1)
             target = match.group(2)
             if directive_type != "include":
-                # Keep @delegate as-is
+                # Keep @delegate and @ref as-is
                 return match.group(0)
             target_path = (fp.parent / target).resolve()
             return _expand(target_path, depth + 1)

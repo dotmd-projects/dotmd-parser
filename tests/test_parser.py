@@ -63,6 +63,23 @@ class TestParseDirectives(unittest.TestCase):
         result = parse_directives("")
         self.assertEqual(result, [])
 
+    def test_ref_basic(self):
+        content = "@ref analysts/market.md"
+        result = parse_directives(content)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["type"], "ref")
+        self.assertEqual(result[0]["target"], "analysts/market.md")
+        self.assertFalse(result[0]["parallel"])
+
+    def test_mixed_all_three_types(self):
+        content = """@include shared/base.md
+@delegate agents/audit.md --parallel
+@ref analysts/market.md"""
+        result = parse_directives(content)
+        self.assertEqual(len(result), 3)
+        types = [r["type"] for r in result]
+        self.assertEqual(types, ["include", "delegate", "ref"])
+
     def test_indented_directive(self):
         """インデントされたディレクティブも有効"""
         content = "   @include references/google.md"
@@ -411,6 +428,66 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(deps), 1)
         self.assertTrue(deps[0].endswith("SKILL.md"))
 
+    # ---- @ref ディレクティブ ----
+
+    def test_ref_basic(self):
+        """@refがrefエッジとして検出される"""
+        self._write("analysts/market.md", "# Market Analyst")
+        self._write("SKILL.md", "@ref analysts/market.md")
+        graph = build_graph(str(self.root))
+        self.assertEqual(len(graph["nodes"]), 2)
+        self.assertEqual(len(graph["edges"]), 1)
+        self.assertEqual(graph["edges"][0]["type"], "ref")
+        self.assertFalse(graph["edges"][0]["parallel"])
+
+    def test_ref_not_recursive(self):
+        """@ref先のファイル内のディレクティブは再帰的に辿らない"""
+        self._write("analysts/deep.md", "# Deep\n@include analysts/deeper.md")
+        self._write("analysts/deeper.md", "# Deeper")
+        self._write("SKILL.md", "@ref analysts/deep.md")
+        graph = build_graph(str(self.root))
+        # SKILL.md + deep.md のみ（deeper.md は辿らない）
+        self.assertEqual(len(graph["nodes"]), 2)
+        ref_edges = [e for e in graph["edges"] if e["type"] == "ref"]
+        self.assertEqual(len(ref_edges), 1)
+
+    def test_ref_missing_target(self):
+        """存在しない@ref先は警告を出す"""
+        self._write("SKILL.md", "@ref analysts/nonexistent.md")
+        graph = build_graph(str(self.root))
+        missing = [w for w in graph["warnings"] if w["type"] == "missing"]
+        self.assertEqual(len(missing), 1)
+        self.assertIn("@ref target", missing[0]["message"])
+
+    def test_ref_coexists_with_include_and_delegate(self):
+        """@include, @delegate, @refが同一ファイルに共存する"""
+        self._write("shared/base.md", "# Base")
+        self._write("agents/researcher.md", "# Researcher")
+        self._write("analysts/market.md", "# Market")
+        self._write("SKILL.md",
+            "@include shared/base.md\n"
+            "@delegate agents/researcher.md\n"
+            "@ref analysts/market.md"
+        )
+        graph = build_graph(str(self.root))
+        self.assertEqual(len(graph["nodes"]), 4)
+        include_edges = [e for e in graph["edges"] if e["type"] == "include"]
+        delegate_edges = [e for e in graph["edges"] if e["type"] == "delegate"]
+        ref_edges = [e for e in graph["edges"] if e["type"] == "ref"]
+        self.assertEqual(len(include_edges), 1)
+        self.assertEqual(len(delegate_edges), 1)
+        self.assertEqual(len(ref_edges), 1)
+
+    def test_ref_dependents_of(self):
+        """@refもdependents_of()で逆依存として検出される"""
+        self._write("analysts/market.md", "# Market")
+        self._write("SKILL.md", "@ref analysts/market.md")
+        graph = build_graph(str(self.root))
+        market_id = [n["id"] for n in graph["nodes"] if "market" in n["id"]][0]
+        deps = dependents_of(graph, market_id)
+        self.assertEqual(len(deps), 1)
+        self.assertTrue(deps[0].endswith("SKILL.md"))
+
     # ---- 任意ファイルをエントリポイント ----
 
     def test_arbitrary_md_as_entry(self):
@@ -468,6 +545,15 @@ class TestResolve(unittest.TestCase):
         entry = self._write("main.md", "# Start\n@delegate agents/audit.md --parallel\n# End")
         result = resolve(str(entry))
         self.assertIn("@delegate agents/audit.md --parallel", result["content"])
+
+    def test_ref_preserved(self):
+        """@ref 行は展開せずそのまま残る"""
+        self._write("analysts/market.md", "# Market")
+        entry = self._write("main.md", "# Start\n@ref analysts/market.md\n# End")
+        result = resolve(str(entry))
+        self.assertIn("@ref analysts/market.md", result["content"])
+        self.assertIn("# Start", result["content"])
+        self.assertIn("# End", result["content"])
 
     def test_variable_substitution(self):
         """variables で {{key}} が置換される"""
