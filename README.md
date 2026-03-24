@@ -98,7 +98,8 @@ print(summary(graph))
 | `@include path/to/file.md` | Inline expansion — file content is inserted at this position |
 | `@delegate path/to/agent.md` | Agent delegation — recorded in graph but not expanded |
 | `@delegate path/to/agent.md --parallel` | Parallel delegation with `--parallel` flag |
-| `` Read `path/to/file.md` `` | Runtime reference — not expanded, but tracked in the graph |
+| `@ref path/to/file.md` | Runtime reference — recorded in graph but not expanded |
+| `` Read `path/to/file.md` `` | Legacy runtime reference — same behavior as `@ref` (kept for backward compatibility) |
 
 ## CLI
 

@@ -1,7 +1,7 @@
 [project]
 name = "dotmd-parser"
-version = "0.1.0"
-description = "Dependency graph parser for .md skill files — parse @include/@delegate directives, build graphs, and resolve templates for AI agent prompt engineering"
+version = "0.2.0"
+description = "Dependency graph parser for .md skill files — parse @include/@delegate/@ref directives, build graphs, and resolve templates for AI agent prompt engineering"
 requires-python = ">=3.10"
 license = "MIT"
 readme = "README.md"

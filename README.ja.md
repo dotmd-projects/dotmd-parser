@@ -94,7 +94,8 @@ print(summary(graph))
 | `@include path/to/file.md` | ファイルをインライン展開 |
 | `@delegate path/to/agent.md` | エージェントに委譲（展開しない） |
 | `@delegate path/to/agent.md --parallel` | 並列実行フラグ付き委譲 |
-| `` Read `path/to/file.md` `` | ランタイム参照（展開しない、グラフには記録） |
+| `@ref path/to/file.md` | ランタイム参照（展開せずグラフに記録） |
+| `` Read `path/to/file.md` `` | レガシー参照（`@ref` と同じ動作、後方互換のため維持） |
 
 ## CLI
 
