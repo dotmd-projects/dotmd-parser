@@ -15,8 +15,9 @@ Additional features:
 - Custom node type mapping support
 """
 
-import re
+import hashlib
 import json
+import re
 from pathlib import Path
 
 # Directive patterns
@@ -44,7 +45,17 @@ READ_REF_PATTERN = re.compile(
 # Placeholder pattern: {{variableName}}
 PLACEHOLDER_PATTERN = re.compile(r'\{\{(\w+)\}\}')
 
+# Heading + inline formatting patterns (for description extraction)
+H1_PATTERN = re.compile(r'^\s*#\s+(.+?)\s*$')
+FRONTMATTER_PATTERN = re.compile(r'^---\s*\n.*?\n---\s*\n', re.DOTALL)
+# Strip basic inline markdown (bold/italic/inline-code/links) for descriptions
+_INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
+_LINK_PATTERN = re.compile(r'\[([^\]]+)\]\([^)]+\)')
+_BOLD_ITALIC_PATTERN = re.compile(r'\*{1,3}([^*]+)\*{1,3}')
+
 MAX_DEPTH = 10
+DESC_MAX_CHARS = 200
+HASH_LENGTH = 16  # Truncate sha256 to first 16 hex chars for compactness
 
 # ============================================================
 # deps.yml parser (lightweight YAML — no PyYAML required)
@@ -133,6 +144,75 @@ def parse_placeholders(content: str) -> list[str]:
             seen.add(name)
             result.append(name)
     return result
+
+
+def _strip_inline_markdown(text: str) -> str:
+    text = _INLINE_CODE_PATTERN.sub(r'\1', text)
+    text = _LINK_PATTERN.sub(r'\1', text)
+    text = _BOLD_ITALIC_PATTERN.sub(r'\1', text)
+    return text.strip()
+
+
+def parse_description(content: str, max_chars: int = DESC_MAX_CHARS) -> dict:
+    """
+    Extract a compact summary from markdown content for token-efficient indexing.
+
+    Returns:
+        {"title": "First H1 or empty", "desc": "First paragraph, trimmed"}
+
+    Skips YAML front-matter and directive lines. Strips inline markdown
+    (bold/italic/inline-code/links) from the description.
+    """
+    # Drop YAML front-matter if present
+    body = FRONTMATTER_PATTERN.sub('', content, count=1)
+
+    title = ""
+    for line in body.splitlines():
+        m = H1_PATTERN.match(line)
+        if m:
+            title = _strip_inline_markdown(m.group(1))
+            break
+
+    # First paragraph: contiguous non-empty lines that are not headings/directives
+    paragraph_lines: list[str] = []
+    in_para = False
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if in_para:
+                break
+            continue
+        if stripped.startswith("#"):
+            continue
+        if DIRECTIVE_PATTERN.match(line):
+            continue
+        paragraph_lines.append(stripped)
+        in_para = True
+
+    desc = _strip_inline_markdown(" ".join(paragraph_lines))
+    if len(desc) > max_chars:
+        desc = desc[: max_chars - 1].rstrip() + "…"
+    return {"title": title, "desc": desc}
+
+
+def hash_content(content: str, length: int = HASH_LENGTH) -> str:
+    """Return a truncated sha256 hex digest of the given content."""
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return digest[:length]
+
+
+def _empty_node(node_id: str, node_type: str, missing: bool) -> dict:
+    """Create a node dict with all standard fields initialized."""
+    return {
+        "id": node_id,
+        "type": node_type,
+        "missing": missing,
+        "placeholders": [],
+        "title": "",
+        "desc": "",
+        "hash": "",
+        "size": 0,
+    }
 
 
 def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -> dict:
@@ -227,12 +307,12 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
             })
             # Add node (recorded as missing)
             if rel not in nodes:
-                nodes[rel] = {"id": rel, "type": _infer_node_type(file_path), "missing": True, "placeholders": []}
+                nodes[rel] = _empty_node(rel, _infer_node_type(file_path), missing=True)
             return
 
         # Register node
         if rel not in nodes:
-            nodes[rel] = {"id": rel, "type": _infer_node_type(file_path), "missing": False, "placeholders": []}
+            nodes[rel] = _empty_node(rel, _infer_node_type(file_path), missing=False)
 
         # If already visited, only add edges (don't recurse into node content)
         if rel in [n["id"] for n in nodes.values() if not n.get("_unvisited", True)]:
@@ -251,8 +331,13 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
             })
             return
 
-        # Detect placeholders
+        # Enrich node with metadata (placeholders, title/desc, hash, size)
         nodes[rel]["placeholders"] = parse_placeholders(content)
+        meta = parse_description(content)
+        nodes[rel]["title"] = meta["title"]
+        nodes[rel]["desc"] = meta["desc"]
+        nodes[rel]["hash"] = hash_content(content)
+        nodes[rel]["size"] = len(content.encode("utf-8"))
 
         # Extract directives & recurse
         visited_stack.append(rel)
@@ -274,12 +359,9 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
                 # @ref: record edge and node, but do not recurse
                 if target_rel not in nodes:
                     is_missing = not target_path.exists()
-                    nodes[target_rel] = {
-                        "id": target_rel,
-                        "type": _infer_node_type(target_path),
-                        "missing": is_missing,
-                        "placeholders": [],
-                    }
+                    nodes[target_rel] = _empty_node(
+                        target_rel, _infer_node_type(target_path), missing=is_missing
+                    )
                     if is_missing:
                         warnings.append({
                             "type": "missing",
@@ -319,12 +401,9 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
             # Register node (no recursion)
             if target_rel not in nodes:
                 is_missing = not target_path.exists()
-                nodes[target_rel] = {
-                    "id": target_rel,
-                    "type": _infer_node_type(target_path),
-                    "missing": is_missing,
-                    "placeholders": [],
-                }
+                nodes[target_rel] = _empty_node(
+                    target_rel, _infer_node_type(target_path), missing=is_missing
+                )
                 if is_missing:
                     warnings.append({
                         "type": "missing",
@@ -355,12 +434,11 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
                 if from_rel not in nodes:
                     node_type = _infer_node_type(from_path)
                     is_missing = not from_path.exists()
-                    nodes[from_rel] = {
-                        "id": from_rel,
-                        "type": node_type if node_type != "reference" else "document",
-                        "missing": is_missing,
-                        "placeholders": [],
-                    }
+                    nodes[from_rel] = _empty_node(
+                        from_rel,
+                        node_type if node_type != "reference" else "document",
+                        missing=is_missing,
+                    )
 
                 for to_file in includes:
                     to_path = (base_dir / to_file).resolve()
@@ -370,12 +448,11 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
                     if to_rel not in nodes:
                         is_missing = not to_path.exists()
                         node_type = _infer_node_type(to_path)
-                        nodes[to_rel] = {
-                            "id": to_rel,
-                            "type": node_type if node_type != "reference" else "document",
-                            "missing": is_missing,
-                            "placeholders": [],
-                        }
+                        nodes[to_rel] = _empty_node(
+                            to_rel,
+                            node_type if node_type != "reference" else "document",
+                            missing=is_missing,
+                        )
                         if is_missing:
                             warnings.append({
                                 "type": "missing",
@@ -582,17 +659,9 @@ def summary(graph: dict) -> str:
 
 
 def main():
-    import sys
-
-    args = sys.argv[1:]
-    if not args:
-        args = ["."]
-
-    target = args[0]
-    graph = build_graph(target)
-    print(summary(graph))
-    print("\n--- JSON ---")
-    print(json.dumps(graph, ensure_ascii=False, indent=2))
+    # Defer CLI to avoid circular imports at module load time
+    from dotmd_parser.cli import run
+    run()
 
 
 if __name__ == "__main__":

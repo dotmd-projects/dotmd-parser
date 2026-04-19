@@ -143,15 +143,77 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 
 ## CLI
 
-```bash
-# Installed as a command
-dotmd-parser ./my-skill/
+`dotmd-parser` ships with sub-commands tuned for Claude Code and CI use. Running `dotmd-parser <path>` with no sub-command still works and falls through to `show` for backward compatibility.
 
-# Or via Python module
-python -m dotmd_parser.parser ./my-skill/
+| Command | Purpose |
+|---|---|
+| `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
+| `dotmd-parser check <path>` | Exit non-zero on cycles / missing refs (CI-friendly) |
+| `dotmd-parser affects <path> <file>` | Reverse dependencies of `<file>` |
+| `dotmd-parser deps <path> <file>` | Direct dependencies of `<file>` |
+| `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
+| `dotmd-parser tree <path>` | ASCII dependency tree |
+| `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
+| `dotmd-parser show <path>` | Summary + full JSON graph (legacy default) |
+
+```bash
+# Typical Claude Code workflow
+dotmd-parser index ./my-skill/           # one-off; cached until files change
+dotmd-parser digest ./my-skill/          # compact summary for the LLM
+dotmd-parser affects ./my-skill/ shared/role.md
 ```
 
-Outputs a human-readable summary followed by the full JSON graph.
+## Claude Code Skill integration
+
+A ready-to-use Claude Code Skill is bundled with the package at
+`src/dotmd_parser/templates/SKILL.md`. Three install paths:
+
+```bash
+# via pip — installs the CLI and drops SKILL.md into the current project
+pip install dotmd-parser
+dotmd-parser init .
+
+# via Release archive — no pip required
+mkdir -p .claude/skills
+curl -L https://github.com/dotmd-projects/dotmd-parser/releases/latest/download/skill.tar.gz \
+  | tar -xz -C .claude/skills/
+
+# manual
+cp src/dotmd_parser/templates/SKILL.md \
+   /path/to/project/.claude/skills/dotmd-parser/
+```
+
+Once installed, Claude will consult the skill whenever it encounters
+`SKILL.md`, `deps.yml`, a `.claude/skills/` tree, or is asked about
+dependencies of a markdown file.
+
+**Why this saves tokens.** Without the skill, Claude typically `grep -r`s
+for `@include`/`@ref` and `cat`s every referenced file to trace a graph.
+With the skill it reads `.claude/dotmd-index.json` (compact, relative paths,
+first-paragraph descriptions) or the `digest` output once, then queries
+`affects` / `deps` by name — never touching the raw markdown until an edit
+is actually needed.
+
+### Auto-refresh via Hook (optional)
+
+Add to `~/.claude/settings.json` to keep `.claude/dotmd-index.json` fresh
+after every markdown edit:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "dotmd-parser index \"$CLAUDE_PROJECT_DIR\" >/dev/null 2>&1 || true"
+      }
+    ]
+  }
+}
+```
+
+The command is idempotent (SHA-256 cache) and exits fast when nothing
+changed.
 
 ## Development
 

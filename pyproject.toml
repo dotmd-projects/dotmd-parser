@@ -1,6 +1,6 @@
 [project]
 name = "dotmd-parser"
-version = "0.2.1"
+version = "0.3.0"
 description = "Dependency graph parser for .md skill files — parse @include/@delegate/@ref directives, build graphs, and resolve templates for AI agent prompt engineering"
 requires-python = ">=3.10"
 license = "MIT"
@@ -49,6 +49,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"dotmd_parser.templates" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,67 @@
+name: Release
+
+# Builds the Claude Code skill archives (tar.gz + zip) and attaches them to
+# the GitHub Release created for a version tag. The archives unpack into
+# `.claude/skills/dotmd-parser/SKILL.md` so users can drop them straight
+# into any project.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to attach assets to (e.g. v0.3.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package-skill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage skill tree
+        run: |
+          set -euo pipefail
+          src="src/dotmd_parser/templates/SKILL.md"
+          if [ ! -f "$src" ]; then
+            echo "::error::Missing $src"
+            exit 1
+          fi
+          stage="$(mktemp -d)/dotmd-parser"
+          mkdir -p "$stage"
+          cp "$src" "$stage/SKILL.md"
+          echo "STAGE_PARENT=$(dirname "$stage")" >> "$GITHUB_ENV"
+
+      - name: Build archives
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar -czf dist/skill.tar.gz -C "$STAGE_PARENT" dotmd-parser
+          (cd "$STAGE_PARENT" && zip -rq skill.zip dotmd-parser)
+          mv "$STAGE_PARENT/skill.zip" dist/skill.zip
+          ls -l dist/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          files: |
+            dist/skill.tar.gz
+            dist/skill.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
