@@ -11,6 +11,7 @@ Subcommands
 - `digest  <path>`         Token-efficient text summary for Claude context.
 - `tree    <path> [file]`  ASCII dependency tree.
 - `resolve <file>`         Recursively expand `@include` directives.
+- `analyze <path>`         AI-powered dependency detection (requires Claude API).
 - `show    <path>`         Legacy summary + full graph JSON (default).
 
 Invoking with a single positional path and no subcommand runs `show`, so
@@ -27,6 +28,12 @@ from pathlib import Path
 
 from dotmd_parser import __version__
 from dotmd_parser.parser import build_graph, resolve, summary
+from dotmd_parser.analyze import (
+    analyze_dependencies as _analyze_dependencies,
+    apply_analysis as _apply_analysis,
+    format_proposal as _format_proposal,
+    load_dotenv as _load_dotenv,
+)
 from dotmd_parser.digest import digest as _digest, tree as _tree, affects as _affects, deps_of as _deps_of
 from dotmd_parser.index import (
     build_index,
@@ -153,6 +160,46 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_analyze(args: argparse.Namespace) -> int:
+    """AI-powered dependency detection via Claude API."""
+    _load_dotenv()  # best-effort: read $CWD/.env if present
+
+    extensions = None
+    if args.ext:
+        extensions = [(e if e.startswith(".") else f".{e}") for e in args.ext]
+
+    try:
+        analysis = _analyze_dependencies(
+            args.path, extensions=extensions, model=args.model
+        )
+    except ValueError as e:  # missing API key
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except RuntimeError as e:  # API or parse failure
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(analysis, ensure_ascii=False, indent=2))
+    else:
+        print(_format_proposal(analysis))
+
+    if args.apply:
+        result = _apply_analysis(args.path, analysis)
+        if result["modified_files"]:
+            print(f"\nInjected @include into {len(result['modified_files'])} file(s):")
+            for f in result["modified_files"]:
+                print(f"  {f}")
+        if result["deps_yml"]:
+            print(f"\nWrote {result['deps_yml']}")
+        # Re-verify with the graph
+        print("\n--- graph after apply ---")
+        from dotmd_parser.parser import build_graph, summary  # local import
+        graph = build_graph(args.path)
+        print(summary(graph))
+    return 0
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     graph = build_graph(args.path)
     print(summary(graph))
@@ -214,6 +261,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_resolve.add_argument("--var", action="append", help="key=value placeholder substitution (repeatable)")
     p_resolve.set_defaults(func=cmd_resolve)
 
+    p_analyze = sub.add_parser("analyze", help="AI dependency detection (requires Claude API key)")
+    p_analyze.add_argument("path", help="Directory to scan")
+    p_analyze.add_argument("--apply", action="store_true", help="Inject @include / write deps.yml")
+    p_analyze.add_argument("--json", action="store_true", help="Emit JSON instead of formatted text")
+    p_analyze.add_argument("--ext", action="append", help="File extension to include (repeatable; default: md, txt)")
+    p_analyze.add_argument("--model", help="Claude model id (default: env CLAUDE_MODEL or claude-sonnet-4-5)")
+    p_analyze.set_defaults(func=cmd_analyze)
+
     p_show = sub.add_parser("show", help="Legacy summary + full JSON graph")
     p_show.add_argument("path", help="Directory or SKILL.md")
     p_show.add_argument("--quiet", action="store_true", help="Suppress JSON dump")
@@ -227,7 +282,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "show"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "show"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

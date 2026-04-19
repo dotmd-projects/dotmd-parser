@@ -30,6 +30,8 @@ As AI agent projects grow, `.md` files start referencing each other via `@includ
 | Expand `@include` to final text | Copy-paste by hand | `resolve("SKILL.md", variables={...})` — recursive expansion |
 | Find unresolved `{{variables}}` | `grep "{{" *.md` — noisy, no dedup | Deduplicated list per node and after expansion |
 | Missing file detection | Runtime failure | Warnings at parse time with exact paths |
+| Detect **implicit** deps (no directives yet) | Read every file, draw by hand | `analyze` subcommand asks Claude, emits `@include` / `deps.yml` |
+| Feed Claude Code with compact context | Read 20 files × 5 KB each | `digest` outputs one ~2 KB summary; `.claude/dotmd-index.json` cache |
 
 ## Installation
 
@@ -154,6 +156,7 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
 | `dotmd-parser tree <path>` | ASCII dependency tree |
 | `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
+| `dotmd-parser analyze <path>` | AI-powered dependency detection (requires `ANTHROPIC_API_KEY`) |
 | `dotmd-parser show <path>` | Summary + full JSON graph (legacy default) |
 
 ```bash
@@ -162,6 +165,44 @@ dotmd-parser index ./my-skill/           # one-off; cached until files change
 dotmd-parser digest ./my-skill/          # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
+
+## `analyze` — AI-assisted dependency detection
+
+Use when a folder of markdown has **no explicit directives yet**. `analyze`
+asks Claude to infer dependencies and can apply the result in one step:
+
+```bash
+export ANTHROPIC_API_KEY=...   # or put it in ./.env
+
+dotmd-parser analyze ./docs/              # dry-run, prints the proposal
+dotmd-parser analyze ./docs/ --apply      # inject @include, write deps.yml
+dotmd-parser analyze ./docs/ --json       # machine-readable
+dotmd-parser analyze ./docs/ --ext md --ext pdf --ext docx
+```
+
+- Text files (`.md`, `.txt`, etc.) get `@include` lines prepended.
+- Binary sources (`.pdf`, `.docx`) are recorded in `deps.yml` — they can't
+  be edited in-place, so the parser reads them from there.
+- PDF / DOCX support is optional: `pip install pdfplumber python-docx`.
+- Re-run with `--apply` over time as the repo grows — existing directives
+  are preserved.
+
+The bundled prompt lives at
+`src/dotmd_parser/templates/prompts/analyze-dependencies.md` and is shipped
+inside the wheel; no network access is needed except for the Claude API
+call itself.
+
+### Programmatic use
+
+```python
+from dotmd_parser import analyze_dependencies, apply_analysis
+
+proposal = analyze_dependencies("./docs/")
+print(proposal["edges"])
+apply_analysis("./docs/", proposal)
+```
+
+For offline tests, pass a `caller=...` kwarg that returns a stub JSON string.
 
 ## Claude Code Skill integration
 

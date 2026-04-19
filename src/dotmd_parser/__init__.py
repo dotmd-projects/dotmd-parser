@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from dotmd_parser.parser import (
     build_graph,
@@ -39,6 +39,15 @@ from dotmd_parser.digest import (
     affects,
     deps_of,
 )
+from dotmd_parser.analyze import (
+    analyze_dependencies,
+    apply_analysis,
+    generate_directives,
+    format_proposal,
+    scan_documents,
+    save_deps_yml,
+    load_deps_yml,
+)
 
 __all__ = [
     "__version__",
@@ -66,4 +75,12 @@ __all__ = [
     "tree",
     "affects",
     "deps_of",
+    # analyze
+    "analyze_dependencies",
+    "apply_analysis",
+    "generate_directives",
+    "format_proposal",
+    "scan_documents",
+    "save_deps_yml",
+    "load_deps_yml",
 ]

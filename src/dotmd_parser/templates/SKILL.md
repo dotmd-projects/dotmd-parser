@@ -1,8 +1,8 @@
 ---
 name: dotmd-parser
-description: Analyze and index .md dependency graphs for Claude Code skills and plugins. Use BEFORE reading many markdown files in a skill/plugin directory — read `.claude/dotmd-index.json` first to understand topology in one shot, avoid grep-scanning, and catch circular references or broken `@include`/`@ref` links. Trigger when the workspace contains `SKILL.md`, `deps.yml`, a `.claude/skills/` tree, or when the user asks about dependencies / impact of editing a markdown file.
+description: Analyze and index .md dependency graphs for Claude Code skills and plugins. Use BEFORE reading many markdown files in a skill/plugin directory — read `.claude/dotmd-index.json` first to understand topology in one shot, avoid grep-scanning, and catch circular references or broken `@include`/`@ref` links. For documentation folders that don't use explicit directives yet, run `dotmd-parser analyze` to detect implicit dependencies with Claude and seed `@include` / `deps.yml`. Trigger when the workspace contains `SKILL.md`, `deps.yml`, a `.claude/skills/` tree, a plain docs folder of `.md`, or when the user asks about dependencies / impact of editing a markdown file.
 license: MIT
-version: 0.3.0
+version: 0.4.0
 ---
 
 # dotmd-parser — .md dependency index for Claude Code
@@ -20,6 +20,20 @@ Invoke this skill when any of the following is true:
 - You are onboarding into an unfamiliar skill/plugin directory
 - A skill install from GitHub needs to be audited before use
 - You need to detect circular references or broken links before running a workflow
+
+## Decision tree — which command first?
+
+```
+Does the folder already contain @include / @ref / @delegate directives
+or a deps.yml?
+│
+├─ YES → go straight to "Token-efficient workflow" below.
+│
+└─ NO  → the parser cannot discover implicit deps. Seed them first:
+         dotmd-parser analyze <path>          # dry-run proposal
+         dotmd-parser analyze <path> --apply  # inject directives & deps.yml
+         …then continue with the workflow below.
+```
 
 ## Token-efficient workflow
 
@@ -74,6 +88,50 @@ read — far cheaper than globbing and `cat`ing every `.md`.
 | `` Read `path/to/file.md` ``      | Legacy runtime reference                   | no        |
 
 Placeholders (`{{name}}`) are also extracted and reported.
+
+## deps.yml — dependencies for files you can't edit
+
+Not every source is a plain `.md` — PDFs, Word docs, specs, PPTX. You can't
+write `@include` into them, but they *do* depend on supporting documents.
+A `deps.yml` at the folder root records those edges and is merged into the
+graph automatically:
+
+```yaml
+# deps.yml
+files:
+  - path: "specs/manual.pdf"
+    includes:
+      - "shared/terminology.md"  # reason: common glossary
+      - "shared/legal.md"
+  - path: "README.md"
+    includes:
+      - "CONTRIBUTING.md"
+```
+
+`dotmd-parser analyze --apply` produces this file automatically for any
+binary source it discovers. Hand-editing is expected afterwards.
+
+## `analyze` — seed a fresh documentation folder
+
+When you land on a doc repo with no directives, let Claude infer them:
+
+```bash
+# Requires ANTHROPIC_API_KEY in the environment or a local .env file.
+# Dry-run (no changes) — prints the proposed edges and shared-part extractions.
+dotmd-parser analyze ./docs/
+
+# Apply the proposal: prepend @include lines to .md/.txt, write deps.yml for .pdf/.docx
+dotmd-parser analyze ./docs/ --apply
+
+# Machine-readable output
+dotmd-parser analyze ./docs/ --json
+
+# Scan more file types (optional deps: pdfplumber, python-docx)
+dotmd-parser analyze ./docs/ --ext md --ext pdf --ext docx
+```
+
+After running with `--apply`, the normal workflow (`index → digest → affects`)
+is immediately useful because directives now exist in the tree.
 
 ## Health check before editing
 
@@ -133,7 +191,7 @@ it exits non-zero on cycles or missing references.
 ## Installation
 
 ```bash
-pip install dotmd-parser          # 0.3.0 or newer
+pip install dotmd-parser          # 0.4.0 or newer
 dotmd-parser init                 # drop SKILL.md into ./.claude/skills/dotmd-parser/
 ```
 
