@@ -1,39 +1,41 @@
-あなたはドキュメント間の依存関係を分析する専門家です。
+You are an expert in analyzing dependencies between documents.
 
-以下のドキュメント一覧を分析し、ファイル間の依存関係を検出してください。
+Analyze the documents listed below and detect dependencies between them.
 
-## 依存関係の判断基準
+## Criteria
 
-- あるドキュメントが別のドキュメントの内容を前提としている（参照、引用、「〜を参照」等）
-- 共通の概念・用語を定義しているドキュメントが、それを使うドキュメントの依存先になる
-- 上位概念（方針・設計）→ 下位概念（実装・手順）の方向に依存がある
-- 共通のルール・定義を複数ドキュメントが参照している場合、それは共有パーツ（shared）になる
+- A document depends on another when it presupposes its content (citations, references, "see X", etc.).
+- A document that defines shared concepts or terminology is a dependency of documents that use them.
+- Dependencies flow from higher-level concepts (policy, design) down to lower-level concepts (implementation, procedure).
+- If multiple documents reference the same rule or definition, propose a shared part (`shared/...`).
 
-共有パーツとして切り出すべき共通要素がある場合は提案してください。
+Propose common elements that should be extracted as shared parts when appropriate.
 
-## ドキュメント一覧
+## Document list
 
 {{file_list}}
 
-## 出力形式（JSON）
+## Output format (JSON)
 
-必ず以下のJSON形式のみを返してください。説明文は不要です。
+Return **only** the following JSON. Do not add prose, markdown, or explanation outside the JSON block.
+
+Write the `reason` field in the **same language as the source documents** (e.g. Japanese reasons for Japanese docs, English reasons for English docs).
 
 ```json
 {
   "edges": [
     {
-      "from": "参照元ファイルの相対パス",
-      "to": "参照先ファイルの相対パス",
-      "reason": "依存理由（1文）"
+      "from": "relative path of the depending file",
+      "to": "relative path of the depended-on file",
+      "reason": "one-sentence justification, matching the source language"
     }
   ],
   "shared_proposals": [
     {
-      "name": "提案する共有パーツのファイル名（shared/xxx.md）",
-      "content_summary": "共有パーツの内容の要約",
-      "used_by": ["このパーツを使うべきファイルのパスのリスト"],
-      "reason": "切り出す理由（1文）"
+      "name": "proposed shared-part filename (e.g. shared/xxx.md)",
+      "content_summary": "summary of the shared part",
+      "used_by": ["list of files that should use this shared part"],
+      "reason": "one-sentence justification, matching the source language"
     }
   ]
 }

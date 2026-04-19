@@ -2,7 +2,7 @@
 name: dotmd-parser
 description: Analyze and index .md dependency graphs for Claude Code skills and plugins. Use BEFORE reading many markdown files in a skill/plugin directory — read `.claude/dotmd-index.json` first to understand topology in one shot, avoid grep-scanning, and catch circular references or broken `@include`/`@ref` links. For documentation folders that don't use explicit directives yet, run `dotmd-parser analyze` to detect implicit dependencies with Claude and seed `@include` / `deps.yml`. Trigger when the workspace contains `SKILL.md`, `deps.yml`, a `.claude/skills/` tree, a plain docs folder of `.md`, or when the user asks about dependencies / impact of editing a markdown file.
 license: MIT
-version: 0.4.0
+version: 0.4.1
 ---
 
 # dotmd-parser — .md dependency index for Claude Code

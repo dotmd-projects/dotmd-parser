@@ -1,6 +1,7 @@
 """
-dotMD parser — unit tests
-python3 -m unittest test_parser -v
+dotmd-parser — unit tests.
+
+Run: `python3 -m unittest test_parser -v`
 """
 import unittest
 import json
@@ -18,7 +19,7 @@ from dotmd_parser.parser import (
 
 
 class TestParseDirectives(unittest.TestCase):
-    """parse_directives() のユニットテスト"""
+    """Unit tests for parse_directives()."""
 
     def test_include_basic(self):
         content = "@include references/google.md"
@@ -53,10 +54,10 @@ class TestParseDirectives(unittest.TestCase):
         self.assertEqual(types, ["include", "include", "delegate"])
 
     def test_ignores_inline_mentions(self):
-        """文中の @include 言及は無視する（行頭のみ有効）"""
+        """Inline @include mentions are ignored (only line-leading directives count)."""
         content = "See @include references/foo.md for details about @delegate"
         result = parse_directives(content)
-        # 行頭でないので0件
+        # Not at the start of a line, so zero matches.
         self.assertEqual(len(result), 0)
 
     def test_empty_file(self):
@@ -81,14 +82,14 @@ class TestParseDirectives(unittest.TestCase):
         self.assertEqual(types, ["include", "delegate", "ref"])
 
     def test_indented_directive(self):
-        """インデントされたディレクティブも有効"""
+        """Indented directives are still detected."""
         content = "   @include references/google.md"
         result = parse_directives(content)
         self.assertEqual(len(result), 1)
 
 
 class TestParseReadRefs(unittest.TestCase):
-    """parse_read_refs() のユニットテスト"""
+    """Unit tests for parse_read_refs()."""
 
     def test_backtick_read(self):
         content = "Read `ads/references/benchmarks.md` for CPC benchmarks"
@@ -114,7 +115,7 @@ class TestParseReadRefs(unittest.TestCase):
         self.assertEqual(result[0], "ads/references/google-audit.md")
 
     def test_duplicate_read_refs(self):
-        """同じパスへの複数Read参照は重複排除"""
+        """Multiple Read references to the same path are deduplicated."""
         content = """Read `ads/references/benchmarks.md` for CPC
 Read `ads/references/benchmarks.md` for CTR"""
         result = parse_read_refs(content)
@@ -126,43 +127,43 @@ Read `ads/references/benchmarks.md` for CTR"""
         self.assertEqual(result, [])
 
     def test_non_md_file_ignored(self):
-        """Read参照は.mdファイルのみ検出"""
+        """Only .md files are treated as Read references."""
         content = "Read `path/to/config.json` for settings"
         result = parse_read_refs(content)
         self.assertEqual(result, [])
 
     def test_no_slash_ignored(self):
-        """パスに/を含まない参照は誤検出防止で無視"""
+        """Paths without `/` are ignored to avoid false positives."""
         content = "Read `README.md` for info"
         result = parse_read_refs(content)
         self.assertEqual(result, [])
 
     def test_numbered_step_read(self):
-        """番号付きステップ内のRead参照"""
+        """Read references inside numbered steps."""
         content = "2. Read `ads/references/linkedin-audit.md` for full 25-check audit"
         result = parse_read_refs(content)
         self.assertEqual(result, ["ads/references/linkedin-audit.md"])
 
     def test_conditional_read(self):
-        """条件付きRead参照"""
+        """Read references inside conditional sentences."""
         content = "**If CRM data present:** Read `ads/modules/crm-pipeline.audit.md` for CRM checks"
         result = parse_read_refs(content)
         self.assertEqual(result, ["ads/modules/crm-pipeline.audit.md"])
 
     def test_see_reference(self):
-        """See参照も検出する"""
+        """`See` references are detected too."""
         content = "See `ads/references/scoring-system.md` for ESCALATE scoring"
         result = parse_read_refs(content)
         self.assertEqual(result, ["ads/references/scoring-system.md"])
 
     def test_list_item_reference(self):
-        """リスト形式のパス参照を検出する"""
+        """List-item style path references are detected."""
         content = "- `references/scoring-system.md` — Weighted scoring algorithm"
         result = parse_read_refs(content)
         self.assertEqual(result, ["references/scoring-system.md"])
 
     def test_multiple_list_items(self):
-        """複数のリスト形式参照"""
+        """Multiple list-style references."""
         content = """- `references/benchmarks.md` — Industry benchmarks
 - `references/compliance.md` — Regulatory requirements
 - `modules/crm-pipeline.audit.md` — CRM checks"""
@@ -170,7 +171,7 @@ Read `ads/references/benchmarks.md` for CTR"""
         self.assertEqual(len(result), 3)
 
     def test_mixed_read_see_list(self):
-        """Read/See/リスト形式が混在するファイル"""
+        """File containing Read, See and list-style references side by side."""
         content = """- `references/benchmarks.md` — Industry benchmarks
 Read `ads/references/google-audit.md` for checklist
 See `ads/references/scoring-system.md` for algorithm"""
@@ -179,7 +180,7 @@ See `ads/references/scoring-system.md` for algorithm"""
 
 
 class TestParsePlaceholders(unittest.TestCase):
-    """parse_placeholders() のユニットテスト"""
+    """Unit tests for parse_placeholders()."""
 
     def test_single_placeholder(self):
         result = parse_placeholders("Hello {{name}}")
@@ -190,7 +191,7 @@ class TestParsePlaceholders(unittest.TestCase):
         self.assertEqual(result, ["foo", "bar", "baz"])
 
     def test_duplicate_placeholders(self):
-        """同じ変数名が複数回出現しても重複しない"""
+        """Repeated placeholder names appear only once in the result."""
         result = parse_placeholders("{{name}} is {{name}}")
         self.assertEqual(result, ["name"])
 
@@ -203,18 +204,18 @@ class TestParsePlaceholders(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_nested_braces_ignored(self):
-        """{{{triple}}} のような不正形式は内側の {{triple}} をキャプチャ"""
+        """Malformed forms like {{{triple}}} capture the inner {{triple}}."""
         result = parse_placeholders("{{{triple}}}")
         self.assertEqual(result, ["triple"])
 
     def test_preserves_order(self):
-        """出現順を維持する"""
+        """Order of first occurrence is preserved."""
         result = parse_placeholders("{{z}} then {{a}} then {{m}}")
         self.assertEqual(result, ["z", "a", "m"])
 
 
 class TestBuildGraph(unittest.TestCase):
-    """build_graph() のインテグレーションテスト（一時ディレクトリ使用）"""
+    """Integration tests for build_graph() using a temp directory."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -229,7 +230,7 @@ class TestBuildGraph(unittest.TestCase):
         p.write_text(content, encoding="utf-8")
         return p
 
-    # ---- 正常系 ----
+    # ---- Happy path ----
 
     def test_single_file_no_deps(self):
         self._write("SKILL.md", "# Simple skill\nNo dependencies.")
@@ -265,28 +266,28 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(graph["edges"]), 3)
 
     def test_directory_input(self):
-        """ディレクトリを渡してもSKILL.mdを自動検出する"""
+        """Passing a directory auto-discovers SKILL.md."""
         self._write("SKILL.md", "# Skill")
         graph = build_graph(str(self.root))
         self.assertEqual(len(graph["nodes"]), 1)
 
     def test_skill_md_path_input(self):
-        """SKILL.mdのパスを直接渡しても動作する"""
+        """Passing the SKILL.md path directly works too."""
         skill = self._write("SKILL.md", "# Skill")
         graph = build_graph(str(skill))
         self.assertEqual(len(graph["nodes"]), 1)
 
-    # ---- 異常系・エッジケース ----
+    # ---- Error / edge cases ----
 
     def test_missing_reference(self):
-        """存在しないファイルへの参照は警告を出す"""
+        """References to nonexistent files produce a warning."""
         self._write("SKILL.md", "@include references/nonexistent.md\n")
         graph = build_graph(str(self.root))
         self.assertEqual(len(graph["warnings"]), 1)
         self.assertEqual(graph["warnings"][0]["type"], "missing")
 
     def test_circular_reference(self):
-        """A -> B -> A の循環参照を検出する"""
+        """Detect a simple A -> B -> A cycle."""
         self._write("a.md", "@include b.md\n")
         self._write("b.md", "@include a.md\n")
         graph = build_graph(str(self.root / "a.md"))
@@ -294,8 +295,8 @@ class TestBuildGraph(unittest.TestCase):
         self.assertGreater(len(circulars), 0)
 
     def test_depth_limit(self):
-        """深さ10を超えるチェーンは警告を出す"""
-        # 11段の深いチェーンを作成
+        """Chains deeper than 10 levels trigger a warning."""
+        # 12-level chain
         for i in range(12):
             next_ref = f"@include level{i+1}.md\n" if i < 11 else ""
             self._write(f"level{i}.md", next_ref)
@@ -305,64 +306,64 @@ class TestBuildGraph(unittest.TestCase):
         self.assertGreater(len(depth_warnings), 0)
 
     def test_empty_skill_md(self):
-        """空のSKILL.mdでもクラッシュしない"""
+        """An empty SKILL.md is handled without crashing."""
         self._write("SKILL.md", "")
         graph = build_graph(str(self.root))
         self.assertEqual(len(graph["nodes"]), 1)
         self.assertEqual(len(graph["edges"]), 0)
 
     def test_no_skill_md_found(self):
-        """SKILL.mdが存在しないディレクトリは警告を返す"""
+        """A directory with no SKILL.md returns a warning."""
         graph = build_graph(str(self.root))
         self.assertEqual(len(graph["warnings"]), 1)
         self.assertEqual(graph["warnings"][0]["type"], "missing")
 
     def test_duplicate_edges_not_added(self):
-        """同じ参照が複数回書かれていてもエッジは重複しない"""
+        """Repeated references to the same target produce only one edge."""
         self._write("references/google.md", "# Google")
         self._write("SKILL.md", "@include references/google.md\n@include references/google.md\n")
         graph = build_graph(str(self.root))
         self.assertEqual(len(graph["edges"]), 1)
 
-    # ---- プレースホルダー検出 ----
+    # ---- Placeholder detection ----
 
     def test_placeholders_detected_in_nodes(self):
-        """ノードにプレースホルダー情報が含まれる"""
-        self._write("SKILL.md", "勘定科目: {{accountItems}}\n税区分: {{taxCode}}")
+        """Nodes carry their placeholder list."""
+        self._write("SKILL.md", "Account items: {{accountItems}}\nTax code: {{taxCode}}")
         graph = build_graph(str(self.root))
         node = graph["nodes"][0]
         self.assertIn("placeholders", node)
         self.assertEqual(sorted(node["placeholders"]), ["accountItems", "taxCode"])
 
     def test_no_placeholders(self):
-        """プレースホルダーがないファイルは空リスト"""
+        """A file without placeholders returns an empty list."""
         self._write("SKILL.md", "# No placeholders")
         graph = build_graph(str(self.root))
         self.assertEqual(graph["nodes"][0]["placeholders"], [])
 
     def test_placeholders_in_included_files(self):
-        """@include先のファイルのプレースホルダーも検出される"""
-        self._write("shared/tax.md", "税区分: {{taxCode}}")
-        self._write("SKILL.md", "勘定科目: {{accountItems}}\n@include shared/tax.md")
+        """Placeholders inside @include targets are also captured."""
+        self._write("shared/tax.md", "Tax code: {{taxCode}}")
+        self._write("SKILL.md", "Account items: {{accountItems}}\n@include shared/tax.md")
         graph = build_graph(str(self.root))
-        # SKILL.md のプレースホルダー
+        # Placeholders on SKILL.md
         skill_node = [n for n in graph["nodes"] if n["id"].endswith("SKILL.md")][0]
         self.assertEqual(skill_node["placeholders"], ["accountItems"])
-        # shared/tax.md のプレースホルダー
+        # Placeholders on shared/tax.md
         tax_node = [n for n in graph["nodes"] if "tax.md" in n["id"]][0]
         self.assertEqual(tax_node["placeholders"], ["taxCode"])
 
-    # ---- カスタムノード型マッピング ----
+    # ---- Custom node-type mapping ----
 
     def test_custom_type_map(self):
-        """カスタム type_map でノード型を制御できる"""
+        """Custom type_map controls the inferred node type."""
         self._write("prompts/receipt.md", "# Receipt prompt")
         custom_map = [("prompt", "prompt")]
         graph = build_graph(str(self.root / "prompts/receipt.md"), type_map=custom_map)
         self.assertEqual(graph["nodes"][0]["type"], "prompt")
 
     def test_default_type_map_shared(self):
-        """デフォルトマッピングで shared/ 配下は shared 型"""
+        """Default mapping classifies files under shared/ as the 'shared' type."""
         self._write("shared/common.md", "# Common")
         self._write("SKILL.md", "@include shared/common.md")
         graph = build_graph(str(self.root))
@@ -370,15 +371,15 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(shared_node["type"], "shared")
 
     def test_type_map_none_uses_default(self):
-        """type_map=None はデフォルトマッピングを使用"""
+        """Passing type_map=None uses the default mapping."""
         self._write("agents/audit.md", "# Audit")
         graph = build_graph(str(self.root / "agents/audit.md"), type_map=None)
         self.assertEqual(graph["nodes"][0]["type"], "agent")
 
-    # ---- Read 参照の検出 ----
+    # ---- Read reference detection ----
 
     def test_read_ref_detected(self):
-        """Read参照がread-refエッジとして検出される"""
+        """A Read reference becomes a 'read-ref' edge."""
         self._write("references/benchmarks.md", "# Benchmarks")
         self._write("SKILL.md", "# Skill\nRead `references/benchmarks.md` for targets")
         graph = build_graph(str(self.root))
@@ -388,18 +389,18 @@ class TestBuildGraph(unittest.TestCase):
         self.assertFalse(graph["edges"][0]["parallel"])
 
     def test_read_ref_not_recursive(self):
-        """Read参照先のファイル内のディレクティブは再帰的に辿らない"""
+        """Directives inside a Read target are NOT followed recursively."""
         self._write("references/deep.md", "# Deep\n@include references/deeper.md")
         self._write("references/deeper.md", "# Deeper")
         self._write("SKILL.md", "# Skill\nRead `references/deep.md` for info")
         graph = build_graph(str(self.root))
-        # SKILL.md + deep.md のみ（deeper.md は辿らない）
+        # Only SKILL.md + deep.md (deeper.md is not walked).
         self.assertEqual(len(graph["nodes"]), 2)
         read_edges = [e for e in graph["edges"] if e["type"] == "read-ref"]
         self.assertEqual(len(read_edges), 1)
 
     def test_read_ref_missing_target(self):
-        """存在しないRead参照先は警告を出す"""
+        """A Read reference to a missing file produces a warning."""
         self._write("SKILL.md", "Read `references/nonexistent.md` for info")
         graph = build_graph(str(self.root))
         missing = [w for w in graph["warnings"] if w["type"] == "missing"]
@@ -407,7 +408,7 @@ class TestBuildGraph(unittest.TestCase):
         self.assertIn("Read reference target", missing[0]["message"])
 
     def test_read_ref_coexists_with_include(self):
-        """@includeとRead参照が同一ファイルに共存する"""
+        """@include and a Read reference can coexist in one file."""
         self._write("shared/role.md", "# Role")
         self._write("references/benchmarks.md", "# Benchmarks")
         self._write("SKILL.md", "@include shared/role.md\nRead `references/benchmarks.md` for data")
@@ -419,7 +420,7 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(read_edges), 1)
 
     def test_read_ref_dependents_of(self):
-        """Read参照もdependents_of()で逆依存として検出される"""
+        """Read references also appear in dependents_of() reverse lookups."""
         self._write("references/benchmarks.md", "# Benchmarks")
         self._write("SKILL.md", "Read `references/benchmarks.md` for data")
         graph = build_graph(str(self.root))
@@ -428,10 +429,10 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(deps), 1)
         self.assertTrue(deps[0].endswith("SKILL.md"))
 
-    # ---- @ref ディレクティブ ----
+    # ---- @ref directive ----
 
     def test_ref_basic(self):
-        """@refがrefエッジとして検出される"""
+        """@ref becomes a 'ref' edge."""
         self._write("analysts/market.md", "# Market Analyst")
         self._write("SKILL.md", "@ref analysts/market.md")
         graph = build_graph(str(self.root))
@@ -441,18 +442,18 @@ class TestBuildGraph(unittest.TestCase):
         self.assertFalse(graph["edges"][0]["parallel"])
 
     def test_ref_not_recursive(self):
-        """@ref先のファイル内のディレクティブは再帰的に辿らない"""
+        """Directives inside an @ref target are NOT followed recursively."""
         self._write("analysts/deep.md", "# Deep\n@include analysts/deeper.md")
         self._write("analysts/deeper.md", "# Deeper")
         self._write("SKILL.md", "@ref analysts/deep.md")
         graph = build_graph(str(self.root))
-        # SKILL.md + deep.md のみ（deeper.md は辿らない）
+        # Only SKILL.md + deep.md (deeper.md is not walked).
         self.assertEqual(len(graph["nodes"]), 2)
         ref_edges = [e for e in graph["edges"] if e["type"] == "ref"]
         self.assertEqual(len(ref_edges), 1)
 
     def test_ref_missing_target(self):
-        """存在しない@ref先は警告を出す"""
+        """@ref to a missing file produces a warning."""
         self._write("SKILL.md", "@ref analysts/nonexistent.md")
         graph = build_graph(str(self.root))
         missing = [w for w in graph["warnings"] if w["type"] == "missing"]
@@ -460,7 +461,7 @@ class TestBuildGraph(unittest.TestCase):
         self.assertIn("@ref target", missing[0]["message"])
 
     def test_ref_coexists_with_include_and_delegate(self):
-        """@include, @delegate, @refが同一ファイルに共存する"""
+        """@include, @delegate and @ref can coexist in one file."""
         self._write("shared/base.md", "# Base")
         self._write("agents/researcher.md", "# Researcher")
         self._write("analysts/market.md", "# Market")
@@ -479,7 +480,7 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(ref_edges), 1)
 
     def test_ref_dependents_of(self):
-        """@refもdependents_of()で逆依存として検出される"""
+        """@ref also appears in dependents_of() reverse lookups."""
         self._write("analysts/market.md", "# Market")
         self._write("SKILL.md", "@ref analysts/market.md")
         graph = build_graph(str(self.root))
@@ -488,11 +489,11 @@ class TestBuildGraph(unittest.TestCase):
         self.assertEqual(len(deps), 1)
         self.assertTrue(deps[0].endswith("SKILL.md"))
 
-    # ---- 任意ファイルをエントリポイント ----
+    # ---- Arbitrary file as entry point ----
 
     def test_arbitrary_md_as_entry(self):
-        """SKILL.md以外の任意.mdファイルをエントリポイントにできる"""
-        self._write("shared/role.md", "あなたはアシスタントです。")
+        """Any .md file (not only SKILL.md) can serve as the entry point."""
+        self._write("shared/role.md", "You are an assistant.")
         entry = self._write("prompts/receipt.md", "# Receipt\n@include ../shared/role.md")
         graph = build_graph(str(entry))
         self.assertEqual(len(graph["nodes"]), 2)
@@ -500,7 +501,7 @@ class TestBuildGraph(unittest.TestCase):
 
 
 class TestResolve(unittest.TestCase):
-    """resolve() のテスト"""
+    """Tests for resolve()."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -516,17 +517,17 @@ class TestResolve(unittest.TestCase):
         return p
 
     def test_basic_include_expansion(self):
-        """@include の内容がインライン展開される"""
-        self._write("shared/role.md", "あなたはアシスタントです。")
-        entry = self._write("main.md", "# Prompt\n@include shared/role.md\n以上。")
+        """@include content is inlined into the final text."""
+        self._write("shared/role.md", "You are an assistant.")
+        entry = self._write("main.md", "# Prompt\n@include shared/role.md\nEnd.")
         result = resolve(str(entry))
-        self.assertIn("あなたはアシスタントです。", result["content"])
+        self.assertIn("You are an assistant.", result["content"])
         self.assertIn("# Prompt", result["content"])
-        self.assertIn("以上。", result["content"])
+        self.assertIn("End.", result["content"])
         self.assertNotIn("@include", result["content"])
 
     def test_nested_include(self):
-        """多段 @include が再帰的に展開される"""
+        """Nested @include directives are expanded recursively."""
         self._write("c.md", "C-content")
         self._write("b.md", "B-start\n@include c.md\nB-end")
         entry = self._write("a.md", "A-start\n@include b.md\nA-end")
@@ -540,14 +541,14 @@ class TestResolve(unittest.TestCase):
         self.assertNotIn("@include", content)
 
     def test_delegate_preserved(self):
-        """@delegate 行は展開せずそのまま残る"""
+        """@delegate lines are preserved, not expanded."""
         self._write("agents/audit.md", "# Audit")
         entry = self._write("main.md", "# Start\n@delegate agents/audit.md --parallel\n# End")
         result = resolve(str(entry))
         self.assertIn("@delegate agents/audit.md --parallel", result["content"])
 
     def test_ref_preserved(self):
-        """@ref 行は展開せずそのまま残る"""
+        """@ref lines are preserved, not expanded."""
         self._write("analysts/market.md", "# Market")
         entry = self._write("main.md", "# Start\n@ref analysts/market.md\n# End")
         result = resolve(str(entry))
@@ -556,15 +557,15 @@ class TestResolve(unittest.TestCase):
         self.assertIn("# End", result["content"])
 
     def test_variable_substitution(self):
-        """variables で {{key}} が置換される"""
-        entry = self._write("main.md", "勘定科目:\n{{accountItems}}\n税区分: {{taxCode}}")
-        result = resolve(str(entry), variables={"accountItems": "- 旅費交通費\n- 消耗品費", "taxCode": "1"})
-        self.assertIn("- 旅費交通費", result["content"])
-        self.assertIn("税区分: 1", result["content"])
+        """{{key}} placeholders are replaced by `variables`."""
+        entry = self._write("main.md", "Account items:\n{{accountItems}}\nTax code: {{taxCode}}")
+        result = resolve(str(entry), variables={"accountItems": "- Travel\n- Supplies", "taxCode": "1"})
+        self.assertIn("- Travel", result["content"])
+        self.assertIn("Tax code: 1", result["content"])
         self.assertEqual(result["placeholders"], [])
 
     def test_partial_variable_substitution(self):
-        """一部の変数のみ指定した場合、未解決分が placeholders に残る"""
+        """Unsupplied placeholders are reported in `placeholders`."""
         entry = self._write("main.md", "{{foo}} and {{bar}}")
         result = resolve(str(entry), variables={"foo": "FOO"})
         self.assertIn("FOO", result["content"])
@@ -572,26 +573,26 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(result["placeholders"], ["bar"])
 
     def test_no_variables(self):
-        """variables=None ではプレースホルダーがそのまま残る"""
+        """With variables=None, placeholders stay in place."""
         entry = self._write("main.md", "Hello {{name}}")
         result = resolve(str(entry))
         self.assertIn("{{name}}", result["content"])
         self.assertEqual(result["placeholders"], ["name"])
 
     def test_include_with_placeholders(self):
-        """@include 先のプレースホルダーも展開後に検出・置換される"""
-        self._write("shared/tax.md", "税区分: {{taxCode}}")
+        """Placeholders from @include targets are detected / substituted after expansion."""
+        self._write("shared/tax.md", "Tax code: {{taxCode}}")
         entry = self._write("main.md", "# Main\n@include shared/tax.md")
-        # 変数なし
+        # Without variables.
         result = resolve(str(entry))
         self.assertEqual(result["placeholders"], ["taxCode"])
-        # 変数あり
+        # With variables.
         result = resolve(str(entry), variables={"taxCode": "1"})
-        self.assertIn("税区分: 1", result["content"])
+        self.assertIn("Tax code: 1", result["content"])
         self.assertEqual(result["placeholders"], [])
 
     def test_circular_reference_warning(self):
-        """循環参照は警告を出して無限ループしない"""
+        """Circular references emit a warning and do not loop forever."""
         self._write("a.md", "A\n@include b.md")
         self._write("b.md", "B\n@include a.md")
         result = resolve(str(self.root / "a.md"))
@@ -599,7 +600,7 @@ class TestResolve(unittest.TestCase):
         self.assertGreater(len(circulars), 0)
 
     def test_missing_include_warning(self):
-        """存在しない @include は警告を出して空文字に置換"""
+        """Missing @include targets emit a warning and expand to empty text."""
         entry = self._write("main.md", "Before\n@include nonexistent.md\nAfter")
         result = resolve(str(entry))
         self.assertIn("Before", result["content"])
@@ -608,7 +609,7 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(len(missing), 1)
 
     def test_empty_file(self):
-        """空ファイルでもクラッシュしない"""
+        """An empty file is handled without crashing."""
         entry = self._write("empty.md", "")
         result = resolve(str(entry))
         self.assertEqual(result["content"], "")
@@ -616,7 +617,7 @@ class TestResolve(unittest.TestCase):
 
 
 class TestDependentsOf(unittest.TestCase):
-    """dependents_of() のテスト"""
+    """Tests for dependents_of()."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -632,8 +633,8 @@ class TestDependentsOf(unittest.TestCase):
         return p
 
     def test_direct_dependent(self):
-        """直接依存元を返す"""
-        self._write("shared/tax.md", "税区分ルール")
+        """Direct dependents are returned."""
+        self._write("shared/tax.md", "Tax rules")
         self._write("SKILL.md", "@include shared/tax.md")
         graph = build_graph(str(self.root))
         tax_id = [n["id"] for n in graph["nodes"] if "tax.md" in n["id"]][0]
@@ -642,7 +643,7 @@ class TestDependentsOf(unittest.TestCase):
         self.assertTrue(deps[0].endswith("SKILL.md"))
 
     def test_transitive_dependents(self):
-        """間接依存（A -> B -> C のとき、Cの依存元はB, A）"""
+        """Transitive dependents: A -> B -> C, dependents of C are B and A."""
         self._write("c.md", "C content")
         self._write("b.md", "@include c.md")
         self._write("a.md", "@include b.md")
@@ -652,7 +653,7 @@ class TestDependentsOf(unittest.TestCase):
         self.assertEqual(len(deps), 2)
 
     def test_no_dependents(self):
-        """依存元がないルートノードは空リスト"""
+        """Root nodes with no dependents return an empty list."""
         self._write("SKILL.md", "# Root")
         graph = build_graph(str(self.root))
         skill_id = graph["nodes"][0]["id"]
@@ -660,19 +661,19 @@ class TestDependentsOf(unittest.TestCase):
         self.assertEqual(deps, [])
 
     def test_shared_dependency(self):
-        """共有ファイルが複数ファイルから参照されている場合、全依存元を返す"""
-        self._write("shared/role.md", "ロール定義")
+        """A shared file referenced by multiple files returns all dependents."""
+        self._write("shared/role.md", "Role definition")
         self._write("a.md", "@include shared/role.md")
         self._write("b.md", "@include shared/role.md")
         self._write("SKILL.md", "@include a.md\n@include b.md")
         graph = build_graph(str(self.root))
         role_id = [n["id"] for n in graph["nodes"] if "role.md" in n["id"]][0]
         deps = dependents_of(graph, role_id)
-        # a.md, b.md, SKILL.md の3ファイルが影響を受ける
+        # a.md, b.md and SKILL.md are all affected.
         self.assertEqual(len(deps), 3)
 
     def test_nonexistent_target(self):
-        """グラフに存在しないIDを指定しても空リスト"""
+        """An unknown node id returns an empty list."""
         self._write("SKILL.md", "# Root")
         graph = build_graph(str(self.root))
         deps = dependents_of(graph, "/nonexistent/file.md")
@@ -686,7 +687,7 @@ class TestSummary(unittest.TestCase):
         self.assertIn("Nodes", result)
 
     def test_summary_with_placeholders(self):
-        """プレースホルダーがある場合に表示される"""
+        """Placeholders are listed when present."""
         graph = {
             "nodes": [{"id": "a.md", "type": "skill", "placeholders": ["foo", "bar"]}],
             "edges": [],
@@ -698,7 +699,7 @@ class TestSummary(unittest.TestCase):
         self.assertIn("foo", result)
 
     def test_summary_dynamic_types(self):
-        """動的にノード型が集計される"""
+        """Node types are counted dynamically."""
         graph = {
             "nodes": [
                 {"id": "a.md", "type": "prompt", "placeholders": []},
