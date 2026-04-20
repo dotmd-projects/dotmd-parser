@@ -176,6 +176,111 @@ def needs_rebuild(index: dict, root: str | Path) -> bool:
     return False
 
 
+def build_scoped_index(root: str | Path, scope: str) -> dict:
+    """Build an index for files under `<root>/<scope>` with paths rewritten
+    to be relative to `root` (not `scope`).
+
+    Intended for incremental re-indexing of large documentation repos where
+    only one subfolder changed. Pair with `merge_index()` to splice the
+    result into an existing full-root index.
+
+    Raises:
+        ValueError: if `<root>/<scope>` does not exist or is not a directory.
+    """
+    base = Path(root).resolve()
+    scope_norm = scope.replace("\\", "/").strip("/")
+    if not scope_norm:
+        raise ValueError("scope cannot be empty")
+    scope_dir = base / scope_norm
+    if not scope_dir.exists():
+        raise ValueError(f"scope not found: {scope}")
+    if not scope_dir.is_dir():
+        raise ValueError(f"scope is not a directory: {scope}")
+
+    sub_idx = build_index(str(scope_dir))
+    prefixed_files: dict[str, dict] = {}
+    for rel, entry in sub_idx["files"].items():
+        new_rel = f"{scope_norm}/{rel}"
+        new_entry = dict(entry)
+        if "deps" in new_entry:
+            new_entry["deps"] = [
+                {**dep, "to": f"{scope_norm}/{dep['to']}"}
+                for dep in new_entry["deps"]
+            ]
+        prefixed_files[new_rel] = new_entry
+
+    sub_idx["files"] = prefixed_files
+    sub_idx["root"] = str(base)
+    sub_idx["missing"] = [f"{scope_norm}/{m}" for m in sub_idx.get("missing", [])]
+    sub_idx["stats"]["files"] = len(prefixed_files)
+    # scope is recorded so merge_index can locate which slice to replace
+    sub_idx["scope"] = scope_norm
+    return sub_idx
+
+
+def merge_index(existing: dict, new: dict, scope: str) -> dict:
+    """Replace the `scope` slice of `existing` with entries from `new`.
+
+    - Files under `<scope>/` in `existing` are removed.
+    - All files in `new` (which must be pre-prefixed) are added.
+    - Files outside the scope are preserved untouched.
+    - Stats are recomputed. Warnings/cycles are union-merged.
+    """
+    scope_norm = scope.replace("\\", "/").strip("/")
+    prefix = f"{scope_norm}/"
+
+    merged_files: dict[str, dict] = {}
+    for rel, entry in existing.get("files", {}).items():
+        if not rel.startswith(prefix):
+            merged_files[rel] = entry
+    for rel, entry in new.get("files", {}).items():
+        merged_files[rel] = entry
+
+    edge_types: dict[str, int] = {}
+    edge_count = 0
+    for entry in merged_files.values():
+        for dep in entry.get("deps", []):
+            edge_count += 1
+            edge_types[dep["type"]] = edge_types.get(dep["type"], 0) + 1
+
+    missing = [rel for rel, entry in merged_files.items() if entry.get("missing")]
+
+    # Union-merge of cycles/warnings; dedupe by message.
+    cycles_set: list[str] = []
+    for c in existing.get("cycles", []) + new.get("cycles", []):
+        if c not in cycles_set:
+            cycles_set.append(c)
+
+    warnings_out: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for w in existing.get("warnings", []) + new.get("warnings", []):
+        key = (w.get("type", ""), w.get("path", ""), w.get("message", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        warnings_out.append(w)
+
+    return {
+        "schema": INDEX_SCHEMA,
+        "generated_at": datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "root": existing.get("root") or new.get("root"),
+        "stats": {
+            "files": len(merged_files),
+            "edges": edge_count,
+            "edge_types": edge_types,
+            "cycles": len(cycles_set),
+            "missing": len(missing),
+        },
+        "files": merged_files,
+        "cycles": cycles_set,
+        "missing": missing,
+        "warnings": warnings_out,
+    }
+
+
 def changed_files(index: dict, root: str | Path) -> list[str]:
     """Return the relative paths whose content no longer matches the index."""
     base = Path(root).resolve()

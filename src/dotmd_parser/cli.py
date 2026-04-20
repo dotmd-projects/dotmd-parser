@@ -31,17 +31,43 @@ from dotmd_parser.parser import build_graph, resolve, summary
 from dotmd_parser.analyze import (
     analyze_dependencies as _analyze_dependencies,
     apply_analysis as _apply_analysis,
+    apply_analysis_from_file as _apply_analysis_from_file,
+    estimate_cost as _estimate_cost,
+    format_cost_estimate as _format_cost_estimate,
+    format_host_agent_plan as _format_host_agent_plan,
     format_proposal as _format_proposal,
     load_dotenv as _load_dotenv,
 )
 from dotmd_parser.digest import digest as _digest, tree as _tree, affects as _affects, deps_of as _deps_of
 from dotmd_parser.index import (
     build_index,
+    build_scoped_index,
     default_index_path,
     load_index,
+    merge_index,
     needs_rebuild,
     save_index,
 )
+from dotmd_parser.inventory import (
+    inventory as _inventory,
+    format_inventory as _format_inventory,
+    suggest_next_command as _suggest_next_command,
+)
+
+
+def _maybe_warn_empty(path: str) -> None:
+    """Emit a stderr hint if `path` has no .md files worth indexing."""
+    try:
+        inv = _inventory(path)
+    except ValueError:
+        return  # path check already handled by caller
+    hint = _suggest_next_command(inv)
+    if hint:
+        print(f"warning: {hint}", file=sys.stderr)
+        print(
+            "        run `dotmd-parser inventory <path>` for details.",
+            file=sys.stderr,
+        )
 
 
 def _load_or_build_index(path: str, use_cache: bool = True) -> dict:
@@ -93,6 +119,31 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_index(args: argparse.Namespace) -> int:
+    if args.scope:
+        try:
+            scoped = build_scoped_index(args.path, args.scope)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        # Merge into any existing full-root index; fall back to scoped-only.
+        existing_path = default_index_path(args.path)
+        if existing_path.exists():
+            try:
+                existing = load_index(existing_path)
+                idx = merge_index(existing, scoped, args.scope)
+            except (ValueError, json.JSONDecodeError):
+                idx = scoped
+        else:
+            idx = scoped
+        out = save_index(idx, args.path, out_path=args.out)
+        stats = idx["stats"]
+        print(
+            f"Wrote {out} — scope={args.scope!r}, "
+            f"{stats['files']} files, {stats['edges']} edges, "
+            f"{stats['cycles']} cycles, {stats['missing']} missing"
+        )
+        return 0
+
     idx = build_index(args.path)
     out = save_index(idx, args.path, out_path=args.out)
     stats = idx["stats"]
@@ -100,6 +151,8 @@ def cmd_index(args: argparse.Namespace) -> int:
         f"Wrote {out} — {stats['files']} files, {stats['edges']} edges, "
         f"{stats['cycles']} cycles, {stats['missing']} missing"
     )
+    if stats["files"] == 0:
+        _maybe_warn_empty(args.path)
     return 0
 
 
@@ -135,6 +188,8 @@ def cmd_deps(args: argparse.Namespace) -> int:
 def cmd_digest(args: argparse.Namespace) -> int:
     idx = _load_or_build_index(args.path, use_cache=not args.no_cache)
     print(_digest(idx))
+    if idx.get("stats", {}).get("files", 0) == 0:
+        _maybe_warn_empty(args.path)
     return 0
 
 
@@ -161,12 +216,46 @@ def cmd_resolve(args: argparse.Namespace) -> int:
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
-    """AI-powered dependency detection via Claude API."""
-    _load_dotenv()  # best-effort: read $CWD/.env if present
-
+    """AI-powered dependency detection via Claude API (or host agent plan)."""
     extensions = None
     if args.ext:
         extensions = [(e if e.startswith(".") else f".{e}") for e in args.ext]
+
+    # --dry-run: estimate cost without calling the API.
+    if args.dry_run:
+        est = _estimate_cost(args.path, model=args.model, extensions=extensions)
+        if args.json:
+            print(json.dumps(est, ensure_ascii=False, indent=2))
+        else:
+            print(_format_cost_estimate(est))
+        return 0
+
+    # --plan: emit a host-agent instruction pack instead of calling the API.
+    if args.plan:
+        print(_format_host_agent_plan(args.path, extensions=extensions))
+        return 0
+
+    # --apply-from <json>: skip the API call and apply a pre-computed result.
+    if args.apply_from:
+        try:
+            result = _apply_analysis_from_file(args.path, args.apply_from)
+        except FileNotFoundError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        if result["modified_files"]:
+            print(f"Injected @include into {len(result['modified_files'])} file(s):")
+            for f in result["modified_files"]:
+                print(f"  {f}")
+        if result["deps_yml"]:
+            print(f"Wrote {result['deps_yml']}")
+        if not result["modified_files"] and not result["deps_yml"]:
+            print("No changes to apply.")
+        return 0
+
+    _load_dotenv()  # best-effort: read $CWD/.env if present
 
     try:
         analysis = _analyze_dependencies(
@@ -174,6 +263,10 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         )
     except ValueError as e:  # missing API key
         print(f"error: {e}", file=sys.stderr)
+        print(
+            "hint: use `--plan` to get a no-API-key prompt pack instead.",
+            file=sys.stderr,
+        )
         return 2
     except RuntimeError as e:  # API or parse failure
         print(f"error: {e}", file=sys.stderr)
@@ -197,6 +290,20 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         from dotmd_parser.parser import build_graph, summary  # local import
         graph = build_graph(args.path)
         print(summary(graph))
+    return 0
+
+
+def cmd_inventory(args: argparse.Namespace) -> int:
+    """Report filesystem composition (API-free, no graph needed)."""
+    try:
+        inv = _inventory(args.path)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(inv, ensure_ascii=False, indent=2))
+    else:
+        print(_format_inventory(inv))
     return 0
 
 
@@ -226,6 +333,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_index = sub.add_parser("index", help="Build and save .claude/dotmd-index.json")
     p_index.add_argument("path", help="Directory or SKILL.md")
     p_index.add_argument("--out", help="Override output path")
+    p_index.add_argument(
+        "--scope",
+        metavar="SUBDIR",
+        help="Incrementally re-index only SUBDIR, merging into the existing index",
+    )
     p_index.set_defaults(func=cmd_index)
 
     p_check = sub.add_parser("check", help="Fail on cycles or missing references")
@@ -267,7 +379,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_analyze.add_argument("--json", action="store_true", help="Emit JSON instead of formatted text")
     p_analyze.add_argument("--ext", action="append", help="File extension to include (repeatable; default: md, txt)")
     p_analyze.add_argument("--model", help="Claude model id (default: env CLAUDE_MODEL or claude-sonnet-4-5)")
+    p_analyze.add_argument(
+        "--plan",
+        action="store_true",
+        help="Emit a host-agent prompt pack instead of calling the API (no API key needed)",
+    )
+    p_analyze.add_argument(
+        "--apply-from",
+        metavar="JSON",
+        help="Apply a pre-computed analysis JSON (pairs with --plan)",
+    )
+    p_analyze.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Estimate token count and USD cost without calling the API",
+    )
     p_analyze.set_defaults(func=cmd_analyze)
+
+    p_inv = sub.add_parser(
+        "inventory",
+        help="Filesystem composition report (API-free; extension counts, sizes, markdown ratio)",
+    )
+    p_inv.add_argument("path", help="Directory to scan")
+    p_inv.add_argument("--json", action="store_true", help="Emit JSON instead of formatted text")
+    p_inv.set_defaults(func=cmd_inventory)
 
     p_show = sub.add_parser("show", help="Legacy summary + full JSON graph")
     p_show.add_argument("path", help="Directory or SKILL.md")
@@ -282,7 +417,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "show"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "show"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

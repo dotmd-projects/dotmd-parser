@@ -24,6 +24,11 @@ Invoke this skill when any of the following is true:
 ## Decision tree — which command first?
 
 ```
+Unsure what the folder contains? Run an API-free scan first:
+  dotmd-parser inventory <path>   # extension counts, sizes, markdown ratio
+
+Then branch based on the result:
+
 Does the folder already contain @include / @ref / @delegate directives
 or a deps.yml?
 │

@@ -390,6 +390,235 @@ def apply_analysis(directory: str | Path, analysis: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Cost estimation (dry-run)
+# ---------------------------------------------------------------------------
+
+# Approximate public pricing (USD per 1M tokens). Update when Anthropic
+# adjusts the pricing page. Consumers should treat these as estimates.
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-7": {"input_per_mtok": 15.0, "output_per_mtok": 75.0},
+    "claude-opus-4-5": {"input_per_mtok": 15.0, "output_per_mtok": 75.0},
+    "claude-sonnet-4-6": {"input_per_mtok": 3.0, "output_per_mtok": 15.0},
+    "claude-sonnet-4-5": {"input_per_mtok": 3.0, "output_per_mtok": 15.0},
+    "claude-haiku-4-5": {"input_per_mtok": 0.80, "output_per_mtok": 4.0},
+}
+
+# Fallback when an unknown model id is passed — use Sonnet-class pricing.
+_FALLBACK_PRICING = {"input_per_mtok": 3.0, "output_per_mtok": 15.0}
+
+# Approximate chars-per-token. Claude's tokenizer runs ~3.5-4 chars/token for
+# English and ~2-3 for Japanese/CJK; 4 is a reasonable safe default.
+_CHARS_PER_TOKEN = 4
+
+# Fixed prompt scaffolding (system + template + schema) — roughly constant
+# regardless of how many files are included. Estimated.
+_BASE_PROMPT_TOKENS = 800
+
+
+def estimate_cost(
+    directory: str | Path,
+    model: str | None = None,
+    extensions: list[str] | None = None,
+    max_output_tokens: int = DEFAULT_MAX_TOKENS,
+) -> dict[str, Any]:
+    """Estimate the cost of running `analyze_dependencies` on `directory`.
+
+    Uses the public per-million-token pricing table in `MODEL_PRICING`.
+    No API call is made. Results are approximate.
+    """
+    resolved_model = model or os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL)
+    pricing = MODEL_PRICING.get(resolved_model, _FALLBACK_PRICING)
+    pricing_note = None
+    if resolved_model not in MODEL_PRICING:
+        pricing_note = (
+            f"unknown model '{resolved_model}'; using Sonnet-class pricing as a fallback"
+        )
+
+    documents = scan_documents(directory, extensions=extensions)
+
+    input_chars = sum(len(doc["summary"]) for doc in documents)
+    # Each file block adds ~30 chars of framing (### path + fences).
+    input_chars += len(documents) * 30
+    input_tokens = (input_chars // _CHARS_PER_TOKEN) + _BASE_PROMPT_TOKENS if documents else 0
+    output_tokens = max_output_tokens if documents else 0
+
+    input_usd = (input_tokens / 1_000_000) * pricing["input_per_mtok"]
+    output_usd = (output_tokens / 1_000_000) * pricing["output_per_mtok"]
+    total_usd = input_usd + output_usd
+
+    result: dict[str, Any] = {
+        "model": resolved_model,
+        "documents": len(documents),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "input_usd": round(input_usd, 6),
+        "output_usd": round(output_usd, 6),
+        "total_usd": round(total_usd, 6),
+        "pricing_source": "approximate; verify at https://anthropic.com/pricing",
+    }
+    if pricing_note:
+        result["pricing_note"] = pricing_note
+    return result
+
+
+def format_cost_estimate(est: dict[str, Any]) -> str:
+    """Pretty-print an estimate dict for the CLI."""
+    lines = [
+        "=" * 60,
+        "Dry-run cost estimate",
+        "=" * 60,
+        f"  model:       {est['model']}",
+        f"  documents:   {est['documents']}",
+        f"  input:       {est['input_tokens']:,} tokens  →  ${est['input_usd']:.4f}",
+        f"  output:      ~{est['output_tokens']:,} tokens  →  ${est['output_usd']:.4f}",
+        f"  total:       ${est['total_usd']:.4f}",
+    ]
+    if "pricing_note" in est:
+        lines.append(f"  note:        {est['pricing_note']}")
+    lines += [
+        "",
+        est.get("pricing_source", ""),
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Host-agent mode — emit a plan instead of calling the Claude API
+# ---------------------------------------------------------------------------
+
+def _list_document_paths(
+    directory: str | Path,
+    extensions: list[str] | None = None,
+) -> list[dict]:
+    """List eligible document paths without extracting text.
+
+    Used by `format_host_agent_plan`: the host agent will read the files
+    itself, so we don't need to parse PDFs / DOCX here (which would require
+    optional dependencies).
+    """
+    if extensions is None:
+        extensions = [".md", ".txt", ".pdf", ".docx"]
+    root = Path(directory).resolve()
+    out: list[dict] = []
+    for ext in extensions:
+        for fp in sorted(root.rglob(f"*{ext}")):
+            rel = fp.relative_to(root).as_posix()
+            if any(part.startswith(".") for part in fp.relative_to(root).parts):
+                continue
+            if "node_modules" in rel:
+                continue
+            if fp.name == DEPS_FILENAME:
+                continue
+            out.append({"path": rel, "ext": ext})
+    return out
+
+
+def format_host_agent_plan(
+    directory: str | Path,
+    extensions: list[str] | None = None,
+) -> str:
+    """Produce a Markdown instruction pack for a host agent (e.g. Claude Code).
+
+    The pack contains: the files to analyze, the analysis task (from the
+    bundled prompt template), the expected JSON schema, and the command to
+    apply the resulting JSON. No API call is made.
+    """
+    directory_str = str(Path(directory).resolve())
+    documents = _list_document_paths(directory, extensions=extensions)
+
+    if not documents:
+        return (
+            f"# dotmd-parser — host agent plan\n\n"
+            f"Target: `{directory_str}`\n\n"
+            "No documents found. Nothing to analyze.\n"
+            "Run `dotmd-parser inventory <path>` to see what's in the folder.\n"
+        )
+
+    template = _load_prompt_template("analyze-dependencies")
+    file_list_block = "\n".join(
+        f"### {d['path']}\n(read this file from `{directory_str}/{d['path']}`)"
+        for d in documents
+    )
+    full_prompt = template.replace("{{file_list}}", file_list_block)
+
+    files_listed = "\n".join(f"- `{d['path']}`" for d in documents)
+
+    plan_lines = [
+        "# dotmd-parser — host agent plan",
+        "",
+        f"Target directory: `{directory_str}`",
+        f"Documents discovered: {len(documents)}",
+        "",
+        "## Instructions for the host agent",
+        "",
+        "This is a no-API-key alternative to `dotmd-parser analyze`. "
+        "Execute the task below yourself (read the files, infer "
+        "dependencies, emit JSON), then feed the JSON back via "
+        "`dotmd-parser analyze <path> --apply-from <json>`.",
+        "",
+        "## Files to analyze",
+        "",
+        files_listed,
+        "",
+        "## Analysis task",
+        "",
+        "```",
+        full_prompt.strip(),
+        "```",
+        "",
+        "## Expected output",
+        "",
+        "A JSON object with this shape:",
+        "",
+        "```json",
+        "{",
+        '  "documents": [{"path": "...", "summary": "..."}],',
+        '  "edges": [{"from": "...", "to": "...", "reason": "..."}],',
+        '  "shared_proposals": [',
+        '    {"name": "shared/...", "content_summary": "...",',
+        '     "used_by": ["..."], "reason": "..."}',
+        "  ]",
+        "}",
+        "```",
+        "",
+        "## Apply the result",
+        "",
+        "Save the JSON to a file (e.g. `analysis.json`), then run:",
+        "",
+        "```bash",
+        f'dotmd-parser analyze "{directory_str}" --apply-from analysis.json',
+        "```",
+        "",
+        "This will inject `@include` lines into text files and write "
+        "`deps.yml` for any binary sources (PDF/DOCX/PPTX).",
+        "",
+    ]
+    return "\n".join(plan_lines)
+
+
+def apply_analysis_from_file(directory: str | Path, json_path: str | Path) -> dict:
+    """Load a pre-computed analysis JSON and apply it.
+
+    Raises:
+        FileNotFoundError: if `json_path` does not exist.
+        ValueError: if the file is not valid JSON or the schema is wrong.
+    """
+    path = Path(json_path)
+    if not path.exists():
+        raise FileNotFoundError(f"analysis JSON not found: {json_path}")
+    try:
+        analysis = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"invalid JSON in {json_path}: {e}") from e
+
+    # Normalize: accept minimal payloads (edges/shared_proposals only).
+    analysis.setdefault("documents", [])
+    analysis.setdefault("edges", [])
+    analysis.setdefault("shared_proposals", [])
+    return apply_analysis(directory, analysis)
+
+
+# ---------------------------------------------------------------------------
 # Human-readable formatter (same shape as dotmd-tools)
 # ---------------------------------------------------------------------------
 

@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 from dotmd_parser.parser import (
     build_graph,
@@ -26,7 +26,9 @@ from dotmd_parser.parser import (
 )
 from dotmd_parser.index import (
     build_index,
+    build_scoped_index,
     compact_graph,
+    merge_index,
     save_index,
     load_index,
     needs_rebuild,
@@ -42,11 +44,24 @@ from dotmd_parser.digest import (
 from dotmd_parser.analyze import (
     analyze_dependencies,
     apply_analysis,
+    apply_analysis_from_file,
+    estimate_cost,
+    format_cost_estimate,
+    format_host_agent_plan,
     generate_directives,
     format_proposal,
     scan_documents,
     save_deps_yml,
     load_deps_yml,
+    MODEL_PRICING,
+)
+from dotmd_parser.inventory import (
+    inventory,
+    format_inventory,
+    suggest_next_command,
+    TEXT_EXTENSIONS,
+    BINARY_EXTENSIONS,
+    MARKDOWN_EXTENSIONS,
 )
 
 __all__ = [
@@ -64,7 +79,9 @@ __all__ = [
     "summary",
     # index
     "build_index",
+    "build_scoped_index",
     "compact_graph",
+    "merge_index",
     "save_index",
     "load_index",
     "needs_rebuild",
@@ -78,9 +95,21 @@ __all__ = [
     # analyze
     "analyze_dependencies",
     "apply_analysis",
+    "apply_analysis_from_file",
+    "estimate_cost",
+    "format_cost_estimate",
+    "format_host_agent_plan",
     "generate_directives",
     "format_proposal",
     "scan_documents",
     "save_deps_yml",
     "load_deps_yml",
+    "MODEL_PRICING",
+    # inventory
+    "inventory",
+    "format_inventory",
+    "suggest_next_command",
+    "TEXT_EXTENSIONS",
+    "BINARY_EXTENSIONS",
+    "MARKDOWN_EXTENSIONS",
 ]

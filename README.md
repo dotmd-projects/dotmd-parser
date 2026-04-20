@@ -149,18 +149,24 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 
 | Command | Purpose |
 |---|---|
+| `dotmd-parser inventory <path>` | **API-free**: extension counts, markdown/binary ratio, largest files |
 | `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
+| `dotmd-parser index <path> --scope <subdir>` | Incrementally re-index one subfolder, merge into the existing index |
 | `dotmd-parser check <path>` | Exit non-zero on cycles / missing refs (CI-friendly) |
 | `dotmd-parser affects <path> <file>` | Reverse dependencies of `<file>` |
 | `dotmd-parser deps <path> <file>` | Direct dependencies of `<file>` |
 | `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
 | `dotmd-parser tree <path>` | ASCII dependency tree |
 | `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
-| `dotmd-parser analyze <path>` | AI-powered dependency detection (requires `ANTHROPIC_API_KEY`) |
+| `dotmd-parser analyze <path>` | AI dependency detection (requires `ANTHROPIC_API_KEY`) |
+| `dotmd-parser analyze <path> --dry-run` | **API-free**: estimate tokens and USD cost |
+| `dotmd-parser analyze <path> --plan` | **API-free**: emit a host-agent prompt pack for Claude Code to execute |
+| `dotmd-parser analyze <path> --apply-from <json>` | Apply a pre-computed analysis JSON |
 | `dotmd-parser show <path>` | Summary + full JSON graph (legacy default) |
 
 ```bash
 # Typical Claude Code workflow
+dotmd-parser inventory ./my-skill/       # start here if you've never seen the folder
 dotmd-parser index ./my-skill/           # one-off; cached until files change
 dotmd-parser digest ./my-skill/          # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
@@ -174,10 +180,24 @@ asks Claude to infer dependencies and can apply the result in one step:
 ```bash
 export ANTHROPIC_API_KEY=...   # or put it in ./.env
 
-dotmd-parser analyze ./docs/              # dry-run, prints the proposal
+dotmd-parser analyze ./docs/              # runs the proposal (uses API)
 dotmd-parser analyze ./docs/ --apply      # inject @include, write deps.yml
 dotmd-parser analyze ./docs/ --json       # machine-readable
 dotmd-parser analyze ./docs/ --ext md --ext pdf --ext docx
+```
+
+### No-API-key workflows
+
+```bash
+# Estimate cost before spending any API credit
+dotmd-parser analyze ./docs/ --dry-run
+
+# Delegate the analysis to Claude Code itself — no API key needed
+dotmd-parser analyze ./docs/ --plan > plan.md
+#   1. Claude Code reads plan.md and executes the task locally
+#   2. It writes the result to analysis.json
+#   3. Apply it:
+dotmd-parser analyze ./docs/ --apply-from analysis.json
 ```
 
 - Text files (`.md`, `.txt`, etc.) get `@include` lines prepended.

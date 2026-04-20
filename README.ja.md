@@ -139,15 +139,44 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 
 ## CLI
 
-```bash
-# コマンドとして実行
-dotmd-parser ./my-skill/
+| コマンド | 用途 |
+|---|---|
+| `dotmd-parser inventory <path>` | **API不要**: 拡張子別ファイル数・サイズ・Markdown比率・大きいファイル一覧 |
+| `dotmd-parser index <path>` | `.claude/dotmd-index.json` をビルド・保存 |
+| `dotmd-parser index <path> --scope <subdir>` | サブディレクトリのみ増分インデックス (既存とマージ) |
+| `dotmd-parser check <path>` | 循環依存・欠損参照があれば非ゼロ終了 (CI向け) |
+| `dotmd-parser affects <path> <file>` | `<file>` に依存しているファイル一覧 |
+| `dotmd-parser deps <path> <file>` | `<file>` の直接依存先 |
+| `dotmd-parser digest <path>` | LLM向けのトークン効率的な要約 |
+| `dotmd-parser tree <path>` | ASCIIの依存ツリー |
+| `dotmd-parser resolve <file> [--var k=v]` | `@include` を再帰的に展開 |
+| `dotmd-parser analyze <path>` | AI依存検出 (`ANTHROPIC_API_KEY` 必須) |
+| `dotmd-parser analyze <path> --dry-run` | **API不要**: トークン数・USDコスト見積もり |
+| `dotmd-parser analyze <path> --plan` | **API不要**: Claude Code 等のホストエージェント向け手順書を出力 |
+| `dotmd-parser analyze <path> --apply-from <json>` | 事前計算済みの分析 JSON を適用 |
+| `dotmd-parser show <path>` | 概要 + 完全な JSON グラフ (旧来のデフォルト) |
 
-# Python モジュールとして実行
-python -m dotmd_parser.parser ./my-skill/
+```bash
+# 典型的な Claude Code ワークフロー
+dotmd-parser inventory ./my-skill/       # フォルダを初めて見る時にまずこれ
+dotmd-parser index ./my-skill/           # 一度実行、ファイル変更まで再利用
+dotmd-parser digest ./my-skill/          # LLM 向けのコンパクトな要約
+dotmd-parser affects ./my-skill/ shared/role.md
 ```
 
-人間が読める概要に続いて、完全な JSON グラフを出力します。
+### API キーなしのワークフロー
+
+```bash
+# API を叩かずにコストを見積もる
+dotmd-parser analyze ./docs/ --dry-run
+
+# 分析自体を Claude Code 等に委譲 — API キー不要
+dotmd-parser analyze ./docs/ --plan > plan.md
+#   1. Claude Code が plan.md を読んでローカルで実行
+#   2. 結果を analysis.json に保存
+#   3. 適用:
+dotmd-parser analyze ./docs/ --apply-from analysis.json
+```
 
 ## 開発
 
