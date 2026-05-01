@@ -3,6 +3,37 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-05-02
+
+Focus: **multi-folder aggregation.** When a project has multiple
+subfolders that each maintain their own `dotmd-index.md` (monorepos,
+docs trees, etc.), running the parent in aggregate mode rolls them up
+into a single navigable index without duplicating content.
+
+### Added
+
+- **`--aggregate` flag** on `dotmd-index` — discovers descendant
+  `dotmd-index.md` artifacts, references them in a `## Sub-Indexes`
+  body section, and records their relative path / `content_hash` /
+  `generated_at` / stats under `aggregates[]` in the parent's
+  frontmatter. User-authored `dotmd-index.md` files (no
+  `generated_by: dotmd-parser`) are silently skipped.
+- **`generate_index_md(..., aggregate=True)`** library parameter for
+  the same behavior.
+- New chunk id `sub-indexes` with anchor `#sub-indexes`.
+
+### Tests
+
+- 258 tests total (+9 vs. 0.6.0), all passing.
+- New module: `test_aggregate.py`.
+
+### Compatibility
+
+Non-breaking. Default behavior of `dotmd-index` is unchanged
+(`aggregate=False`).
+
+---
+
 ## [0.6.0] — 2026-05-02
 
 Focus: **single-file folder overview + OpenRAG bridge.** Spotted while

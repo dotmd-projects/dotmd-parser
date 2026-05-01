@@ -336,6 +336,7 @@ def cmd_dotmd_index(args: argparse.Namespace) -> int:
         "include_folder_map": not args.no_folder_map,
         "include_deps_tree": not args.no_deps,
         "max_files": args.max_files,
+        "aggregate": args.aggregate,
     }
 
     if args.stdout:
@@ -523,6 +524,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=200,
         help="Cap on the number of files listed in the body (default: 200)",
+    )
+    p_idxmd.add_argument(
+        "--aggregate",
+        action="store_true",
+        help="Discover descendant dotmd-index.md artifacts and reference them "
+             "(adds a ## Sub-Indexes section + aggregates[] frontmatter)",
     )
     p_idxmd.add_argument(
         "--push-openrag",

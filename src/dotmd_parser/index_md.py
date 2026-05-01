@@ -435,6 +435,70 @@ def _deps_section(idx: dict) -> str:
     return "\n".join(lines)
 
 
+def _discover_child_indexes(root: Path) -> list[dict]:
+    """Find descendant `dotmd-index.md` artifacts authored by dotmd-parser.
+
+    The target's own `<root>/dotmd-index.md` is skipped. Files that lack
+    `generated_by: dotmd-parser` in their frontmatter are silently
+    ignored — those are user-authored documents that happen to share the
+    name and must not be aggregated.
+    """
+    out: list[dict] = []
+    target_self = (root / DEFAULT_INDEX_FILENAME).resolve()
+    for p in sorted(root.rglob(DEFAULT_INDEX_FILENAME)):
+        if not p.is_file():
+            continue
+        try:
+            rel = p.relative_to(root)
+        except ValueError:
+            continue
+        if _is_hidden_rel(rel):
+            continue
+        if p.resolve() == target_self:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = extract_frontmatter(text)
+        if fm.get("generated_by") != "dotmd-parser":
+            continue
+        stats = fm.get("stats") or {}
+        out.append({
+            "path": rel.as_posix(),
+            "content_hash": fm.get("content_hash", ""),
+            "generated_at": fm.get("generated_at", ""),
+            "files": stats.get("files", 0),
+            "edges": stats.get("edges", 0),
+            "cycles": stats.get("cycles", 0),
+            "missing": stats.get("missing", 0),
+            "root": fm.get("root", ""),
+        })
+    return out
+
+
+def _subindexes_section(aggregates: list[dict]) -> str:
+    lines = ["## Sub-Indexes", ""]
+    lines.append(
+        "Descendant `dotmd-index.md` artifacts discovered under this folder. "
+        "Read the relevant child for full file listings — this section "
+        "intentionally only summarizes."
+    )
+    lines.append("")
+    for entry in aggregates:
+        files = entry.get("files", 0)
+        edges = entry.get("edges", 0)
+        cycles = entry.get("cycles", 0)
+        missing = entry.get("missing", 0)
+        health = "OK" if (cycles == 0 and missing == 0) else f"cycles:{cycles} missing:{missing}"
+        line = f"- `{entry['path']}` — {files} files, {edges} edges, {health}"
+        gen_at = entry.get("generated_at")
+        if gen_at:
+            line += f"  _(generated {gen_at})_"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _placeholders_section(idx: dict) -> tuple[str, list[str]]:
     placeholders: set[str] = set()
     for entry in idx.get("files", {}).values():
@@ -460,6 +524,7 @@ def generate_index_md(
     include_folder_map: bool = True,
     folder_map_depth: int = 3,
     include_deps_tree: bool = True,
+    aggregate: bool = False,
     analysis_backend: str = "none",
     extra_frontmatter: dict | None = None,
 ) -> str:
@@ -478,6 +543,11 @@ def generate_index_md(
         Depth limit for the folder map.
     include_deps_tree : bool
         Include an ASCII dependency tree (only rendered if any edges exist).
+    aggregate : bool
+        When True, scan descendants for `dotmd-index.md` artifacts authored
+        by dotmd-parser and reference them in a `## Sub-Indexes` section
+        plus `aggregates[]` frontmatter. Files lacking
+        `generated_by: dotmd-parser` are silently skipped.
     analysis_backend : str
         Recorded in frontmatter; one of "none" | "claude-api" | "host-agent" |
         "openrag". Set by callers that ran an analysis pass first.
@@ -533,6 +603,18 @@ def generate_index_md(
             body_parts.append(deps_text)
             chunks.append({"id": "deps", "anchor": "#dependency-tree", "tokens_est": _approx_tokens(deps_text)})
 
+    aggregates: list[dict] = _discover_child_indexes(base) if aggregate else []
+    if aggregates:
+        body_parts.append("")
+        body_parts.append("<!-- chunk:sub-indexes -->")
+        sub_text = _subindexes_section(aggregates)
+        body_parts.append(sub_text)
+        chunks.append({
+            "id": "sub-indexes",
+            "anchor": "#sub-indexes",
+            "tokens_est": _approx_tokens(sub_text),
+        })
+
     placeholders_text, placeholder_list = _placeholders_section(idx)
     if placeholders_text:
         body_parts.append("")
@@ -567,6 +649,8 @@ def generate_index_md(
     }
     if placeholder_list:
         fm["placeholders"] = placeholder_list
+    if aggregate:
+        fm["aggregates"] = aggregates
     if extra_frontmatter:
         fm.update(extra_frontmatter)
 

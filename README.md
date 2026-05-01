@@ -151,6 +151,7 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 |---|---|
 | `dotmd-parser inventory <path>` | **API-free**: extension counts, markdown/binary ratio, largest files |
 | `dotmd-parser dotmd-index <path>` | **API-free**: generate `<path>/dotmd-index.md` (single-file folder overview) |
+| `dotmd-parser dotmd-index <path> --aggregate` | Roll up nested `dotmd-index.md` files into the parent (Sub-Indexes section) |
 | `dotmd-parser dotmd-index <path> --push-openrag` | After writing, ingest into OpenRAG (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
 | `dotmd-parser index <path> --scope <subdir>` | Incrementally re-index one subfolder, merge into the existing index |
@@ -196,6 +197,26 @@ The file contains:
 Re-running on an unchanged folder writes nothing (`content_hash` matches).
 The command refuses to overwrite a hand-written `dotmd-index.md` unless
 `--force` is passed.
+
+### Aggregating across nested folders
+
+Run with `--aggregate` to roll up descendant artifacts:
+
+```bash
+dotmd-parser dotmd-index ./project/ --aggregate
+# project/dotmd-index.md now references project/docs/dotmd-index.md and
+# project/src/dotmd-index.md without duplicating their file listings.
+```
+
+Each child is discovered, its frontmatter is read, and a one-line
+summary (file count, edges, health) appears under `## Sub-Indexes`.
+The `aggregates[]` frontmatter array records each child's `content_hash`
+so staleness is easy to detect. User-authored `dotmd-index.md` files
+that lack `generated_by: dotmd-parser` are silently skipped.
+
+This is a **reference**, not a merge — Claude reads the parent to learn
+which subfolders exist, then drills into the relevant child file. The
+parent stays token-efficient even with deeply nested trees.
 
 ### OpenRAG integration
 

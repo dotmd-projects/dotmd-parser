@@ -2,7 +2,7 @@
 name: dotmd-index
 description: Build (or read) a single `dotmd-index.md` artifact at a folder's root that summarizes everything inside — file inventory, dependency graph, placeholders, and chunk markers for RAG. Use this BEFORE grep-scanning or Read-ing many files when entering an unfamiliar folder. Triggers when the workspace contains a `dotmd-index.md` file, when the user asks "what's in this folder?", "give me an overview of <path>", or when you are about to read 3+ documents in the same directory. Pairs with OpenRAG (https://github.com/langflow-ai/openrag) — the artifact is RAG-ingestion-friendly via `--push-openrag`.
 license: MIT
-version: 0.6.0
+version: 0.6.1
 ---
 
 # dotmd-index — single-file folder overview for Claude
@@ -131,6 +131,7 @@ chunking.
 | `dotmd-parser dotmd-index <path> --no-folder-map` | Skip the ASCII folder tree |
 | `dotmd-parser dotmd-index <path> --no-deps` | Skip the dependency tree |
 | `dotmd-parser dotmd-index <path> --max-files 50` | Cap how many files appear in the body |
+| `dotmd-parser dotmd-index <path> --aggregate` | Roll up descendant `dotmd-index.md` files into a parent `## Sub-Indexes` section |
 | `dotmd-parser dotmd-index <path> --push-openrag` | Ingest the file into OpenRAG after writing |
 
 ## Idempotency & safety
@@ -144,6 +145,33 @@ chunking.
   `--force` is passed. This protects hand-written files of the same name.
 - The artifact itself is excluded from `content_hash` so writing it never
   invalidates its own hash.
+
+## Aggregating multiple folders
+
+For a monorepo or a `docs/` tree where each subfolder maintains its own
+`dotmd-index.md`, run the parent in aggregate mode:
+
+```bash
+dotmd-parser dotmd-index ./project/ --aggregate
+```
+
+The parent file gains:
+
+- A `## Sub-Indexes` section with one bullet per descendant artifact
+  (file count, edge count, health, generated timestamp)
+- An `aggregates[]` frontmatter array with each child's relative path,
+  `content_hash`, `generated_at`, and stats — enough to detect when a
+  child has gone stale without parsing the child again
+
+Children are discovered by walking the tree for files named
+`dotmd-index.md`. Files that don't carry `generated_by: dotmd-parser`
+in their frontmatter are silently skipped, so a hand-written
+`dotmd-index.md` in `manual/` won't pollute the roll-up.
+
+This is intentionally a **reference**, not a merge — Claude reads the
+parent to learn what subfolders exist, then drills into the relevant
+child for full file listings. That keeps the parent token-efficient and
+scales to large trees.
 
 ## OpenRAG integration
 
