@@ -2,7 +2,7 @@
 name: dotmd-index
 description: Build (or read) a single `dotmd-index.md` artifact at a folder's root that summarizes everything inside — file inventory, dependency graph, placeholders, and chunk markers for RAG. Use this BEFORE grep-scanning or Read-ing many files when entering an unfamiliar folder. Triggers when the workspace contains a `dotmd-index.md` file, when the user asks "what's in this folder?", "give me an overview of <path>", or when you are about to read 3+ documents in the same directory. Pairs with OpenRAG (https://github.com/langflow-ai/openrag) — the artifact is RAG-ingestion-friendly via `--push-openrag`.
 license: MIT
-version: 0.6.1
+version: 0.6.2
 ---
 
 # dotmd-index — single-file folder overview for Claude

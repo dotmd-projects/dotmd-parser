@@ -44,11 +44,15 @@ def _invoke(argv: list[str]) -> tuple[int, str, str]:
 # ---------------------------------------------------------------------------
 
 class _FakeIngestResponse:
-    def __init__(self, document_id="doc-abc", task_id="task-1", status="completed"):
-        self.document_id = document_id
+    """Mirrors openrag-sdk's IngestTaskStatus (returned by ingest(wait=True))."""
+
+    def __init__(self, task_id="task-1", status="completed", filename="dotmd-index.md"):
         self.task_id = task_id
         self.status = status
-        self.successful_files = ["dotmd-index.md"]
+        self.filename = filename
+        self.total_files = 1
+        self.successful_files = 1   # int (count), not a list
+        self.failed_files = 0
 
 
 class _FakeDocuments:
@@ -108,8 +112,9 @@ class TestPushToOpenRAG(unittest.TestCase):
         self.assertEqual(client.api_key, "test-key")
         self.assertEqual(client.base_url, "http://localhost:3000")
         self.assertIn(str(self.md_path), client.ingested_paths)
-        self.assertEqual(result["document_id"], "doc-abc")
+        self.assertEqual(result["task_id"], "task-1")
         self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["successful_files"], 1)
 
     def test_returns_exports_shape(self):
         result = push_to_openrag(
@@ -117,7 +122,16 @@ class TestPushToOpenRAG(unittest.TestCase):
             base_url="https://rag.example.com",
             _client_cls=_FakeOpenRAGClient,
         )
-        for key in ("document_id", "task_id", "status", "pushed_at", "base_url"):
+        for key in (
+            "task_id",
+            "status",
+            "filename",
+            "total_files",
+            "successful_files",
+            "failed_files",
+            "pushed_at",
+            "base_url",
+        ):
             self.assertIn(key, result)
         self.assertEqual(result["base_url"], "https://rag.example.com")
         # pushed_at should be ISO-8601 UTC
@@ -166,7 +180,8 @@ class TestCliPushOpenRAG(unittest.TestCase):
         fm = extract_frontmatter(target.read_text(encoding="utf-8"))
         self.assertIn("exports", fm)
         self.assertIn("openrag", fm["exports"])
-        self.assertEqual(fm["exports"]["openrag"]["document_id"], "doc-abc")
+        self.assertEqual(fm["exports"]["openrag"]["task_id"], "task-1")
+        self.assertEqual(fm["exports"]["openrag"]["status"], "completed")
         # Verify the SDK was actually called
         self.assertEqual(len(_FakeOpenRAGClient.instances), 1)
 

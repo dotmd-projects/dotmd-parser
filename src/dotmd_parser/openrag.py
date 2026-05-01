@@ -33,9 +33,14 @@ from typing import Any
 
 
 def _import_openrag_client_cls():
-    """Lazy SDK import. Raise a helpful ImportError when missing."""
+    """Lazy SDK import. Raise a helpful ImportError when missing.
+
+    Note: the PyPI package is `openrag-sdk` (with hyphen) and the importable
+    module is `openrag_sdk` (with underscore). The module exposes
+    `OpenRAGClient` from `openrag_sdk.client`.
+    """
     try:
-        from openrag import OpenRAGClient  # type: ignore
+        from openrag_sdk import OpenRAGClient  # type: ignore
     except ImportError as e:
         raise ImportError(
             "openrag-sdk is not installed. "
@@ -63,12 +68,21 @@ def _resolve_base_url(explicit: str | None) -> str:
 
 
 def _normalize_response(raw: Any, base_url: str) -> dict:
-    """Coerce an SDK ingest response into our `exports.openrag` dict shape."""
+    """Coerce an SDK ingest response into our `exports.openrag` dict shape.
+
+    With `wait=True`, openrag-sdk returns an `IngestTaskStatus` carrying
+    `task_id`, `status`, and per-file counters (`total_files`,
+    `successful_files`, `failed_files`). With `wait=False` it returns a
+    leaner `IngestResponse` (task_id + optional status + filename).
+    Both shapes are accepted here; missing fields default to neutral values.
+    """
     return {
-        "document_id": _attr(raw, "document_id", "") or _attr(raw, "id", ""),
         "task_id": _attr(raw, "task_id", "") or "",
         "status": _attr(raw, "status", "") or "",
-        "successful_files": list(_attr(raw, "successful_files", []) or []),
+        "filename": _attr(raw, "filename", "") or "",
+        "total_files": int(_attr(raw, "total_files", 0) or 0),
+        "successful_files": int(_attr(raw, "successful_files", 0) or 0),
+        "failed_files": int(_attr(raw, "failed_files", 0) or 0),
         "pushed_at": _now_iso(),
         "base_url": base_url,
     }

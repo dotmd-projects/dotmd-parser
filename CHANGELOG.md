@@ -3,6 +3,43 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-05-02
+
+Focus: **fix the OpenRAG bridge to actually work against the real
+SDK on PyPI.** Two bugs surfaced when first installing
+`dotmd-parser[openrag]` end-to-end on a fresh interpreter.
+
+### Fixed
+
+- **Import path** — was `from openrag import OpenRAGClient`, the real
+  module is `openrag_sdk` (the PyPI distribution is `openrag-sdk` with
+  the hyphen, but the importable package name uses an underscore).
+- **`successful_files` type** — the SDK's `IngestTaskStatus` exposes
+  this as an `int` (count) but `_normalize_response` was wrapping it
+  in `list(...)`, which crashed at runtime. The exports record now
+  carries `total_files` / `successful_files` / `failed_files` as ints
+  and exposes the `filename` instead of a fictitious `document_id`
+  (the real SDK has no such field).
+- **Version pin** — `openrag-sdk>=0.4.0,<0.5.0` was based on the GitHub
+  repo's release tag, but the PyPI package only ships up to `0.3.1`.
+  Loosened to `openrag-sdk>=0.3.1` to match reality.
+
+### Changed
+
+- The `exports.openrag` frontmatter slot now records:
+  `task_id`, `status`, `filename`, `total_files`, `successful_files`,
+  `failed_files`, `pushed_at`, `base_url`.
+  `document_id` is no longer present (the SDK never returned it).
+- CLI's "Pushed to OpenRAG" log line now reports
+  `(task_id=…, successful=N, failed=M)` instead of `document_id`.
+
+### Tests
+
+- 263 tests total, all passing. `_FakeIngestResponse` now mirrors the
+  real `IngestTaskStatus` shape.
+
+---
+
 ## [0.6.1] — 2026-05-02
 
 Focus: **multi-folder aggregation.** When a project has multiple

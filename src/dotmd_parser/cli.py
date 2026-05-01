@@ -387,7 +387,13 @@ def cmd_dotmd_index(args: argparse.Namespace) -> int:
             **gen_kwargs,
         )
         path.write_text(md_with_export, encoding="utf-8")
-        print(f"Pushed to OpenRAG: {export.get('base_url')} (document_id={export.get('document_id') or '<n/a>'})")
+        tid = export.get("task_id") or "<n/a>"
+        succ = export.get("successful_files", 0)
+        fail = export.get("failed_files", 0)
+        print(
+            f"Pushed to OpenRAG: {export.get('base_url')} "
+            f"(task_id={tid}, successful={succ}, failed={fail})"
+        )
     return 0
 
 
