@@ -53,6 +53,11 @@ from dotmd_parser.inventory import (
     format_inventory as _format_inventory,
     suggest_next_command as _suggest_next_command,
 )
+from dotmd_parser.index_md import (
+    DEFAULT_INDEX_FILENAME,
+    generate_index_md as _generate_index_md,
+    write_index_md as _write_index_md,
+)
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -88,20 +93,35 @@ def _load_or_build_index(path: str, use_cache: bool = True) -> dict:
 SKILL_DIR_NAME = "dotmd-parser"
 SKILL_TEMPLATE = "SKILL.md"
 
+# Map skill id (user-facing folder name) → package resource path
+_SKILLS = {
+    "dotmd-parser": ("dotmd_parser.templates", SKILL_TEMPLATE),
+    "dotmd-index": ("dotmd_parser.templates.dotmd_index", SKILL_TEMPLATE),
+}
 
-def _read_bundled_skill() -> str:
-    """Load the packaged SKILL.md via importlib.resources."""
-    return resources.files("dotmd_parser.templates").joinpath(SKILL_TEMPLATE).read_text(encoding="utf-8")
+
+def _read_bundled_skill(skill_id: str = "dotmd-parser") -> str:
+    """Load a packaged SKILL.md via importlib.resources."""
+    pkg, name = _SKILLS[skill_id]
+    return resources.files(pkg).joinpath(name).read_text(encoding="utf-8")
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Install the bundled SKILL.md into `<path>/.claude/skills/dotmd-parser/SKILL.md`."""
+    """Install a bundled SKILL.md into `<path>/.claude/skills/<skill-id>/SKILL.md`."""
     project = Path(args.path).resolve()
     if not project.exists():
         print(f"error: path does not exist: {project}", file=sys.stderr)
         return 2
 
-    target_dir = project / ".claude" / "skills" / SKILL_DIR_NAME
+    skill_id = args.skill or "dotmd-parser"
+    if skill_id not in _SKILLS:
+        print(
+            f"error: unknown skill {skill_id!r}; choose from {sorted(_SKILLS)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    target_dir = project / ".claude" / "skills" / skill_id
     target = target_dir / SKILL_TEMPLATE
 
     if target.exists() and not args.force:
@@ -112,9 +132,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    target.write_text(_read_bundled_skill(), encoding="utf-8")
+    target.write_text(_read_bundled_skill(skill_id), encoding="utf-8")
     print(f"Installed skill: {target}")
-    print("Next: run `dotmd-parser index .` from the project root.")
+    if skill_id == "dotmd-parser":
+        print("Next: run `dotmd-parser index .` from the project root.")
+    elif skill_id == "dotmd-index":
+        print("Next: run `dotmd-parser dotmd-index .` to generate the artifact.")
     return 0
 
 
@@ -307,6 +330,66 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dotmd_index(args: argparse.Namespace) -> int:
+    """Generate `<root>/dotmd-index.md` (or print to stdout). Optionally push to OpenRAG."""
+    gen_kwargs = {
+        "include_folder_map": not args.no_folder_map,
+        "include_deps_tree": not args.no_deps,
+        "max_files": args.max_files,
+    }
+
+    if args.stdout:
+        if args.push_openrag:
+            print("error: --stdout and --push-openrag are mutually exclusive", file=sys.stderr)
+            return 2
+        try:
+            md = _generate_index_md(args.path, **gen_kwargs)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(md, end="" if md.endswith("\n") else "\n")
+        return 0
+
+    try:
+        path, written = _write_index_md(args.path, force=args.force, **gen_kwargs)
+    except ValueError as e:
+        msg = str(e)
+        print(f"error: {msg}", file=sys.stderr)
+        if "does not exist" in msg or "is not a directory" in msg:
+            return 2
+        return 1
+    if written:
+        print(f"Wrote {path}")
+    else:
+        print(f"{path} unchanged (content_hash matches).")
+
+    if args.push_openrag:
+        from dotmd_parser.openrag import push_to_openrag as _push_to_openrag
+        try:
+            export = _push_to_openrag(
+                str(path),
+                base_url=args.openrag_url,
+                api_key=args.openrag_api_key,
+            )
+        except ImportError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        except (ValueError, RuntimeError) as e:
+            print(f"error: openrag push failed: {e}", file=sys.stderr)
+            return 1
+
+        # Re-emit the file with exports.openrag recorded — bypass idempotency
+        # check because we have explicit new metadata to persist.
+        md_with_export = _generate_index_md(
+            args.path,
+            extra_frontmatter={"exports": {"openrag": export}},
+            **gen_kwargs,
+        )
+        path.write_text(md_with_export, encoding="utf-8")
+        print(f"Pushed to OpenRAG: {export.get('base_url')} (document_id={export.get('document_id') or '<n/a>'})")
+    return 0
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     graph = build_graph(args.path)
     print(summary(graph))
@@ -325,8 +408,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
 
-    p_init = sub.add_parser("init", help="Install bundled SKILL.md into .claude/skills/dotmd-parser/")
+    p_init = sub.add_parser("init", help="Install a bundled SKILL.md into .claude/skills/<id>/")
     p_init.add_argument("path", nargs="?", default=".", help="Project root (default: current directory)")
+    p_init.add_argument(
+        "--skill",
+        choices=sorted(_SKILLS),
+        default="dotmd-parser",
+        help="Which bundled skill to install (default: dotmd-parser)",
+    )
     p_init.add_argument("--force", action="store_true", help="Overwrite an existing SKILL.md")
     p_init.set_defaults(func=cmd_init)
 
@@ -404,6 +493,54 @@ def _build_parser() -> argparse.ArgumentParser:
     p_inv.add_argument("--json", action="store_true", help="Emit JSON instead of formatted text")
     p_inv.set_defaults(func=cmd_inventory)
 
+    p_idxmd = sub.add_parser(
+        "dotmd-index",
+        help=f"Generate {DEFAULT_INDEX_FILENAME} at <path>/ (single-file folder overview)",
+    )
+    p_idxmd.add_argument("path", help="Directory to summarize")
+    p_idxmd.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Print to stdout instead of writing to <path>/dotmd-index.md",
+    )
+    p_idxmd.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing file even if it isn't a dotmd-parser artifact",
+    )
+    p_idxmd.add_argument(
+        "--no-folder-map",
+        action="store_true",
+        help="Skip the ASCII folder-map section",
+    )
+    p_idxmd.add_argument(
+        "--no-deps",
+        action="store_true",
+        help="Skip the dependency-tree section",
+    )
+    p_idxmd.add_argument(
+        "--max-files",
+        type=int,
+        default=200,
+        help="Cap on the number of files listed in the body (default: 200)",
+    )
+    p_idxmd.add_argument(
+        "--push-openrag",
+        action="store_true",
+        help="After writing, ingest the file into OpenRAG (requires `pip install dotmd-parser[openrag]`)",
+    )
+    p_idxmd.add_argument(
+        "--openrag-url",
+        metavar="URL",
+        help="OpenRAG endpoint (default: $OPENRAG_URL or http://localhost:3000)",
+    )
+    p_idxmd.add_argument(
+        "--openrag-api-key",
+        metavar="KEY",
+        help="OpenRAG API key (default: $OPENRAG_API_KEY, handled by the SDK)",
+    )
+    p_idxmd.set_defaults(func=cmd_dotmd_index)
+
     p_show = sub.add_parser("show", help="Legacy summary + full JSON graph")
     p_show.add_argument("path", help="Directory or SKILL.md")
     p_show.add_argument("--quiet", action="store_true", help="Suppress JSON dump")
@@ -417,7 +554,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "show"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

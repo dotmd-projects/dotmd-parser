@@ -150,6 +150,8 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | Command | Purpose |
 |---|---|
 | `dotmd-parser inventory <path>` | **API-free**: extension counts, markdown/binary ratio, largest files |
+| `dotmd-parser dotmd-index <path>` | **API-free**: generate `<path>/dotmd-index.md` (single-file folder overview) |
+| `dotmd-parser dotmd-index <path> --push-openrag` | After writing, ingest into OpenRAG (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
 | `dotmd-parser index <path> --scope <subdir>` | Incrementally re-index one subfolder, merge into the existing index |
 | `dotmd-parser check <path>` | Exit non-zero on cycles / missing refs (CI-friendly) |
@@ -162,15 +164,59 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser analyze <path> --dry-run` | **API-free**: estimate tokens and USD cost |
 | `dotmd-parser analyze <path> --plan` | **API-free**: emit a host-agent prompt pack for Claude Code to execute |
 | `dotmd-parser analyze <path> --apply-from <json>` | Apply a pre-computed analysis JSON |
+| `dotmd-parser init [--skill dotmd-index]` | Install a bundled SKILL.md into `.claude/skills/<id>/` |
 | `dotmd-parser show <path>` | Summary + full JSON graph (legacy default) |
 
 ```bash
 # Typical Claude Code workflow
-dotmd-parser inventory ./my-skill/       # start here if you've never seen the folder
-dotmd-parser index ./my-skill/           # one-off; cached until files change
-dotmd-parser digest ./my-skill/          # compact summary for the LLM
+dotmd-parser inventory ./my-skill/         # start here if you've never seen the folder
+dotmd-parser dotmd-index ./my-skill/       # write ./my-skill/dotmd-index.md (Claude reads ONLY this file)
+dotmd-parser index ./my-skill/             # one-off; cached until files change
+dotmd-parser digest ./my-skill/            # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
+
+## `dotmd-index.md` — folder overview in a single file
+
+`dotmd-parser dotmd-index <path>` writes `<path>/dotmd-index.md`, a
+self-contained Markdown file that combines `inventory()` and
+`build_index()` into one artifact Claude can read **instead of**
+grep-scanning every file in the folder.
+
+The file contains:
+
+- YAML frontmatter (`schema`, `content_hash`, `stats`, RAG `chunks[]`)
+- `## Summary` (file counts, total size, health)
+- `## Folder Map` (depth-limited ASCII tree)
+- `## Files` (markdown: title + desc + deps; other: kind + size)
+- `## Dependency Tree` (`@include` / `@delegate` / `@ref` graph as ASCII)
+- `## Placeholders` (unresolved `{{...}}` variables)
+- `<!-- chunk:id -->` HTML markers so any RAG tool can split deterministically
+
+Re-running on an unchanged folder writes nothing (`content_hash` matches).
+The command refuses to overwrite a hand-written `dotmd-index.md` unless
+`--force` is passed.
+
+### OpenRAG integration
+
+[OpenRAG](https://github.com/langflow-ai/openrag) is a self-hosted RAG
+platform built on Langflow + Docling + OpenSearch. dotmd-parser can ship
+the artifact straight into it:
+
+```bash
+pip install dotmd-parser[openrag]       # adds openrag-sdk
+export OPENRAG_URL=http://localhost:3000
+export OPENRAG_API_KEY=...              # if your instance requires auth
+
+dotmd-parser dotmd-index ./docs/ --push-openrag
+# 1. Writes ./docs/dotmd-index.md
+# 2. Calls OpenRAGClient.documents.ingest(file_path=...)
+# 3. Records {document_id, base_url, pushed_at} in exports.openrag
+```
+
+`dotmd-index.md` is the **map** (one-shot overview); OpenRAG is the
+**search index** (full-content semantic retrieval). Register OpenRAG's
+MCP server with Claude Code to use both surfaces from the same client.
 
 ## `analyze` — AI-assisted dependency detection
 

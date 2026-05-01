@@ -142,6 +142,8 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | コマンド | 用途 |
 |---|---|
 | `dotmd-parser inventory <path>` | **API不要**: 拡張子別ファイル数・サイズ・Markdown比率・大きいファイル一覧 |
+| `dotmd-parser dotmd-index <path>` | **API不要**: `<path>/dotmd-index.md` を生成 (1ファイルでフォルダ全体を把握) |
+| `dotmd-parser dotmd-index <path> --push-openrag` | 生成後に OpenRAG に取り込み (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | `.claude/dotmd-index.json` をビルド・保存 |
 | `dotmd-parser index <path> --scope <subdir>` | サブディレクトリのみ増分インデックス (既存とマージ) |
 | `dotmd-parser check <path>` | 循環依存・欠損参照があれば非ゼロ終了 (CI向け) |
@@ -154,15 +156,49 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser analyze <path> --dry-run` | **API不要**: トークン数・USDコスト見積もり |
 | `dotmd-parser analyze <path> --plan` | **API不要**: Claude Code 等のホストエージェント向け手順書を出力 |
 | `dotmd-parser analyze <path> --apply-from <json>` | 事前計算済みの分析 JSON を適用 |
+| `dotmd-parser init [--skill dotmd-index]` | バンドル済みスキルを `.claude/skills/<id>/` にインストール |
 | `dotmd-parser show <path>` | 概要 + 完全な JSON グラフ (旧来のデフォルト) |
 
 ```bash
 # 典型的な Claude Code ワークフロー
-dotmd-parser inventory ./my-skill/       # フォルダを初めて見る時にまずこれ
-dotmd-parser index ./my-skill/           # 一度実行、ファイル変更まで再利用
-dotmd-parser digest ./my-skill/          # LLM 向けのコンパクトな要約
+dotmd-parser inventory ./my-skill/         # フォルダを初めて見る時にまずこれ
+dotmd-parser dotmd-index ./my-skill/       # ./my-skill/dotmd-index.md を生成 (Claude が 1 ファイルで全体把握)
+dotmd-parser index ./my-skill/             # 一度実行、ファイル変更まで再利用
+dotmd-parser digest ./my-skill/            # LLM 向けのコンパクトな要約
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
+
+### `dotmd-index.md` (フォルダ概要を 1 ファイルで)
+
+`dotmd-parser dotmd-index <path>` を実行すると、`<path>/dotmd-index.md` が生成されます。
+Claude はこの 1 ファイルを読むだけで、フォルダ全体の構成・依存関係・未解決プレースホルダーを把握できます。
+
+含まれる内容:
+
+- YAML frontmatter (schema, content_hash, stats, RAG 用 `chunks[]`)
+- `## Summary` (ファイル数・サイズ・健全性)
+- `## Folder Map` (ASCII の階層ツリー)
+- `## Files` (Markdown には title/desc/deps、それ以外には種別とサイズ)
+- `## Dependency Tree` (`@include`/`@delegate`/`@ref` の依存関係を ASCII で可視化)
+- `## Placeholders` (未解決の `{{...}}` 一覧)
+- `<!-- chunk:id -->` HTML マーカー (任意の RAG ツールが安定して切り出し可能)
+
+### OpenRAG 連携
+
+[OpenRAG](https://github.com/langflow-ai/openrag) (Langflow + Docling + OpenSearch ベースの RAG プラットフォーム) に直接送り込めます:
+
+```bash
+pip install dotmd-parser[openrag]      # openrag-sdk を追加
+export OPENRAG_URL=http://localhost:3000
+export OPENRAG_API_KEY=...
+
+dotmd-parser dotmd-index ./docs/ --push-openrag
+# → ./docs/dotmd-index.md を生成 → OpenRAG に ingest
+# → frontmatter の exports.openrag に document_id を記録
+```
+
+`dotmd-index.md` (フォルダの「地図」) と OpenRAG (全文検索インデックス) は相補的に機能します。
+OpenRAG の MCP サーバーを Claude Code に登録すれば、同じコンテンツが検索ツールとしても利用可能です。
 
 ### API キーなしのワークフロー
 

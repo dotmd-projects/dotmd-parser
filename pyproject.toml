@@ -1,7 +1,7 @@
 [project]
 name = "dotmd-parser"
-version = "0.5.0"
-description = "Dependency graph parser and AI analyzer for .md skill files — parse @include/@delegate/@ref directives, build graphs, resolve templates, and detect implicit dependencies via Claude for AI agent prompt engineering"
+version = "0.6.0"
+description = "Dependency graph parser, single-file folder index (dotmd-index.md), and AI analyzer for .md skill files — parse @include/@delegate/@ref directives, build graphs, resolve templates, generate RAG-friendly overviews, and ingest into OpenRAG"
 requires-python = ">=3.10"
 license = "MIT"
 readme = "README.md"
@@ -40,6 +40,16 @@ Homepage = "https://github.com/dotmd-projects/dotmd-parser"
 Repository = "https://github.com/dotmd-projects/dotmd-parser"
 Issues = "https://github.com/dotmd-projects/dotmd-parser/issues"
 
+[project.optional-dependencies]
+openrag = ["openrag-sdk>=0.4.0,<0.5.0"]
+pdf = ["pdfplumber>=0.10"]
+docx = ["python-docx>=1.0"]
+all = [
+    "openrag-sdk>=0.4.0,<0.5.0",
+    "pdfplumber>=0.10",
+    "python-docx>=1.0",
+]
+
 [project.scripts]
 dotmd-parser = "dotmd_parser.parser:main"
 
@@ -53,6 +63,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "dotmd_parser.templates" = ["*.md"]
 "dotmd_parser.templates.prompts" = ["*.md"]
+"dotmd_parser.templates.dotmd_index" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

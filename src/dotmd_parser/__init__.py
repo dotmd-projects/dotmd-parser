@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from dotmd_parser.parser import (
     build_graph,
@@ -63,6 +63,14 @@ from dotmd_parser.inventory import (
     BINARY_EXTENSIONS,
     MARKDOWN_EXTENSIONS,
 )
+from dotmd_parser.index_md import (
+    generate_index_md,
+    write_index_md,
+    extract_frontmatter,
+    DEFAULT_INDEX_FILENAME,
+    INDEX_MD_SCHEMA,
+)
+from dotmd_parser.openrag import push_to_openrag
 
 __all__ = [
     "__version__",
@@ -112,4 +120,12 @@ __all__ = [
     "TEXT_EXTENSIONS",
     "BINARY_EXTENSIONS",
     "MARKDOWN_EXTENSIONS",
+    # index_md
+    "generate_index_md",
+    "write_index_md",
+    "extract_frontmatter",
+    "DEFAULT_INDEX_FILENAME",
+    "INDEX_MD_SCHEMA",
+    # openrag
+    "push_to_openrag",
 ]

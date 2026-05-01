@@ -3,6 +3,78 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-05-02
+
+Focus: **single-file folder overview + OpenRAG bridge.** Spotted while
+trying to onboard Claude into unfamiliar `.md` folders without burning
+tokens reading every file: there was no way to produce a *single*,
+durable artifact that captured the inventory + dependency graph + chunk
+boundaries together.
+
+### Added
+
+- **`dotmd-index` subcommand** — generates `<root>/dotmd-index.md`, a
+  self-contained Markdown artifact that combines `inventory()` + 
+  `build_index()` into one file Claude can read instead of grep-scanning.
+  Includes RAG-friendly chunk markers (`<!-- chunk:id -->`) and a
+  `chunks[]` frontmatter manifest.
+  - Frontmatter `content_hash` (sha256 over filesystem state) makes
+    re-runs idempotent.
+  - Refuses to overwrite hand-written `dotmd-index.md` files unless
+    `--force` is passed (frontmatter `generated_by: dotmd-parser` check).
+  - Flags: `--stdout`, `--force`, `--no-folder-map`, `--no-deps`,
+    `--max-files N`.
+- **`--push-openrag` flag** — after writing, ingest the artifact into a
+  running OpenRAG instance (https://github.com/langflow-ai/openrag) via
+  the optional `openrag-sdk` dependency. Records `document_id` /
+  `pushed_at` / `base_url` under frontmatter `exports.openrag` for
+  traceability. Companion flags: `--openrag-url`, `--openrag-api-key`.
+- **`init --skill <id>` flag** — install a specific bundled skill
+  (`dotmd-parser` or `dotmd-index`) into `.claude/skills/<id>/`.
+- **`templates/dotmd_index/SKILL.md`** — Claude Code sub-skill that
+  documents when to read `dotmd-index.md`, how to generate it, and how
+  to combine it with OpenRAG's MCP server.
+
+### Public API additions
+
+- `dotmd_parser.generate_index_md(root, *, max_files, include_folder_map,
+  include_deps_tree, folder_map_depth, analysis_backend, extra_frontmatter)`
+- `dotmd_parser.write_index_md(root, md=None, *, force, filename, **kwargs)`
+- `dotmd_parser.extract_frontmatter(md)` — minimal stdlib YAML reader
+  that handles the shapes emitted by the in-house dumper (scalars,
+  nested dicts, lists of flat dicts).
+- `dotmd_parser.push_to_openrag(md_path, *, base_url, api_key,
+  _client_cls)` — async-to-sync wrapper over `openrag-sdk`'s
+  `OpenRAGClient.documents.ingest`.
+- `dotmd_parser.DEFAULT_INDEX_FILENAME`, `INDEX_MD_SCHEMA`.
+
+### Optional dependencies
+
+`pyproject.toml` now exposes `[project.optional-dependencies]`:
+
+```bash
+pip install dotmd-parser[openrag]   # + openrag-sdk for --push-openrag
+pip install dotmd-parser[pdf]       # + pdfplumber for analyze on PDFs
+pip install dotmd-parser[docx]      # + python-docx for analyze on DOCX
+pip install dotmd-parser[all]       # everything
+```
+
+### Tests
+
+- 249 tests total (+43 vs. 0.5.0), all passing.
+- New test modules: `test_index_md.py`, `test_cli_dotmd_index.py`,
+  `test_openrag_push.py` (the latter mocks `OpenRAGClient` so it runs
+  without `openrag-sdk` installed).
+
+### Compatibility
+
+Non-breaking. All existing commands, library APIs, and the
+`.claude/dotmd-index.json` format behave as before. The new
+`dotmd-index.md` artifact lives at the folder root and is independent of
+the existing `.claude/dotmd-index.json`.
+
+---
+
 ## [0.5.0] — 2026-04-20
 
 Focus: **no-API-key workflows and better onboarding for non-.md repos.**
