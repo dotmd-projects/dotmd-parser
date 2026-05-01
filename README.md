@@ -20,6 +20,35 @@ As AI agent projects grow, `.md` files start referencing each other via `@includ
 
 **dotmd-parser** solves this by parsing your `.md` files into a dependency graph — automatically detecting directives, runtime references, and template placeholders. One function call gives you the full picture.
 
+## Token savings — measured
+
+The single biggest reason to reach for `dotmd-parser` in an agent loop is
+that it lets Claude understand a folder **without reading every file**.
+The numbers below are produced by `tests/test_token_savings.py` (run
+with `DOTMD_TOKEN_REPORT=1 pytest -s`) using `tiktoken`'s `cl100k_base`
+encoding (a close proxy for Claude's tokenizer family):
+
+| Folder profile | Files | Naive read of every `.md` | `dotmd-index.md` | `digest` |
+|---|---:|---:|---:|---:|
+| Small skill (each file ~2 KB) | 4 | 1,610 tokens | **605 (0.38×)** | 174 (0.11×) |
+| Medium docs (each file ~2 KB) | 31 | 15,855 tokens | **2,837 (0.18× → 5.6× cheaper)** | 1,285 (0.08×) |
+| Large docs (each file ~2 KB) | 111 | 58,171 tokens | **9,535 (0.16× → 6.3× cheaper)** | 4,606 (0.08×) |
+
+**Takeaway**: at ~30 files dotmd-parser already cuts Claude's reading
+cost by **~5.6×**, and the savings *grow* with folder size. At 100+
+files the same context window now fits **6× more conversation**, or
+serves the same prompt at **1/6 the input-token spend**.
+
+The persistent `dotmd-index.md` artifact pays a fixed frontmatter
+overhead, so for *very small* folders (a handful of files of a few
+hundred bytes) the naive read can still win. The `digest` output is
+even more compact (~12× cheaper at scale) but isn't persisted on disk —
+use `dotmd-index.md` for stable navigation, `digest` for one-shot
+summaries.
+
+The break-even is around **4 files × 1 KB each**: above that,
+`dotmd-index.md` is always cheaper than reading the folder by hand.
+
 ## Comparison
 
 | Capability | Manual / grep | dotmd-parser |
