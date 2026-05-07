@@ -157,9 +157,12 @@ def inventory(path: str) -> dict[str, Any]:
     all_entries: list[dict[str, Any]] = []
 
     for p in root.rglob("*"):
-        if not p.is_file():
-            continue
         if _is_hidden(p, root):
+            continue
+        try:
+            if not p.is_file():
+                continue
+        except OSError:
             continue
         if _is_office_lock(p.name):
             continue

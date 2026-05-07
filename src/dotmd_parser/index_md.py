@@ -259,13 +259,16 @@ def _is_hidden_rel(rel: Path) -> bool:
 def _walk_files(root: Path):
     """Yield (rel_path_posix, size) for non-hidden, non-lock files."""
     for p in sorted(root.rglob("*")):
-        if not p.is_file():
-            continue
         try:
             rel = p.relative_to(root)
         except ValueError:
             continue
         if _is_hidden_rel(rel):
+            continue
+        try:
+            if not p.is_file():
+                continue
+        except OSError:
             continue
         if p.name.startswith("~$"):
             continue
