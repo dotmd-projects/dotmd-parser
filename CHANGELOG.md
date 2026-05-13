@@ -3,6 +3,15 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-05-13
+
+### Added
+- **Orchestrator マルチシグナル検出** (`build_graph`):
+  - `.claude/skills/<name>/skill.md` (Claude Code plugin convention) を directory 引数で auto-detect
+  - 既存の root `SKILL.md` 検出は完全に後方互換 (root 優先)
+  - 4 つの主要 orchestrator 配置パターンをカバー
+  - 関連 spec: dotmd-io `docs/superpowers/specs/2026-05-13-orchestration-graph-design.md`
+
 ## [0.6.2] — 2026-05-02
 
 Focus: **fix the OpenRAG bridge to actually work against the real
