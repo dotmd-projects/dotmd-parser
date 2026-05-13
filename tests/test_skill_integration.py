@@ -308,7 +308,7 @@ class TestBundledTemplate(unittest.TestCase):
 
 class TestVersion(unittest.TestCase):
     def test_version_bump(self):
-        self.assertEqual(__version__, "0.6.2")
+        self.assertEqual(__version__, "0.7.0")
 
 
 if __name__ == "__main__":

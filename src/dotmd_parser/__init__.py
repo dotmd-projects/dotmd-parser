@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.6.2"
+__version__ = "0.7.0"
 
 from dotmd_parser.parser import (
     build_graph,
