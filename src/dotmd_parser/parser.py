@@ -244,14 +244,22 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
     if root.is_dir():
         candidate = root / "SKILL.md"
         if not candidate.exists():
-            # Case-insensitive search
+            # Case-insensitive search at root
             candidates = list(root.glob("*.md"))
             skill_files = [f for f in candidates if f.name.upper() == "SKILL.MD"]
             if skill_files:
                 candidate = skill_files[0]
             else:
-                has_skill_md = False
-                candidate = None
+                # Sprint 13 Phase 36: Claude Code plugin convention fallback
+                # .claude/skills/<name>/skill.md パターンを検出
+                plugin_skills = list(root.glob(".claude/skills/*/skill.md"))
+                if plugin_skills:
+                    # 最初の plugin skill を採用 (複数ある場合は名前順)
+                    plugin_skills.sort()
+                    candidate = plugin_skills[0]
+                else:
+                    has_skill_md = False
+                    candidate = None
 
         if candidate:
             root = candidate
