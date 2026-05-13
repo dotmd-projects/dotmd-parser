@@ -1,0 +1,116 @@
+name: Publish to PyPI
+
+# Publishes dotmd-parser to PyPI when pyproject.toml version is bumped on main.
+# Reads the version, skips if v{version} tag already exists, otherwise:
+#   1. Build sdist + wheel
+#   2. Upload to PyPI via Trusted Publishing (OIDC, no API token)
+#   3. Push the v{version} tag — which triggers release.yml to attach
+#      skill archives to the GitHub Release.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "pyproject.toml"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish even if the version tag already exists (will fail on PyPI if already uploaded)"
+        required: false
+        default: "false"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      should_publish: ${{ steps.check_tag.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from pyproject.toml
+        id: get_version
+        run: |
+          set -euo pipefail
+          version=$(grep -m 1 '^version = ' pyproject.toml | sed -E 's/version = "([^"]+)".*/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::Could not parse version from pyproject.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $version"
+
+      - name: Decide whether to publish
+        id: check_tag
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.get_version.outputs.version }}"
+          force="${{ github.event.inputs.force }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            if [ "$force" = "true" ]; then
+              echo "Tag $tag already exists, but force=true — proceeding."
+              echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Tag $tag already exists — skipping publish."
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "Tag $tag does not exist — will publish."
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-publish:
+    needs: check-version
+    if: needs.check-version.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/dotmd-parser
+    permissions:
+      contents: write       # to push the version tag
+      id-token: write       # to authenticate with PyPI via OIDC
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build sdist and wheel
+        run: |
+          rm -rf dist
+          python -m build
+          ls -l dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          print-hash: true
+
+      - name: Create and push version tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="v${{ needs.check-version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists locally — skipping tag creation."
+          else
+            git tag -a "$tag" -m "Release $tag"
+            git push origin "$tag"
+          fi
