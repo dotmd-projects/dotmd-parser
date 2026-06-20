@@ -1,6 +1,6 @@
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
-    _placeholder_findings,
+    _placeholder_findings, _conflicting_directive_findings,
 )
 
 
@@ -67,3 +67,36 @@ def test_placeholder_findings_one_per_var_sorted():
 def test_placeholder_findings_empty_when_none():
     idx = _idx(files={"a.md": {"type": "agent"}})
     assert _placeholder_findings(idx) == []
+
+
+def test_conflicting_directive_include_and_ref_same_target():
+    idx = _idx(files={
+        "SKILL.md": {"type": "skill", "deps": [
+            {"to": "shared/role.md", "type": "include"},
+            {"to": "shared/role.md", "type": "ref"},
+        ]},
+        "shared/role.md": {"type": "shared"},
+    })
+    res = _conflicting_directive_findings(idx)
+    assert len(res) == 1
+    assert res[0]["rule"] == "conflicting-directive"
+    assert res[0]["severity"] == "warning"
+    assert res[0]["path"] == "SKILL.md"
+    assert "shared/role.md" in res[0]["message"]
+    assert "include" in res[0]["message"] and "ref" in res[0]["message"]
+
+
+def test_conflicting_directive_single_type_is_clean():
+    idx = _idx(files={"SKILL.md": {"type": "skill", "deps": [
+        {"to": "a.md", "type": "include"},
+    ]}})
+    assert _conflicting_directive_findings(idx) == []
+
+
+def test_conflicting_directive_ignores_read_ref():
+    # include + read-ref to same target: only one EXPLICIT type -> no conflict
+    idx = _idx(files={"SKILL.md": {"type": "skill", "deps": [
+        {"to": "a.md", "type": "include"},
+        {"to": "a.md", "type": "read-ref"},
+    ]}})
+    assert _conflicting_directive_findings(idx) == []

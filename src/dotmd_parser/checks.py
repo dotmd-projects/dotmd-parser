@@ -66,3 +66,28 @@ def _placeholder_findings(index: dict) -> list[dict]:
                 f"unresolved placeholder: {{{{{var}}}}}",
             ))
     return out
+
+
+_EXPLICIT_DIRECTIVE_TYPES = {"include", "ref", "delegate"}
+
+
+def _conflicting_directive_findings(index: dict) -> list[dict]:
+    """Warn when a source reaches one target via ≥2 distinct explicit types."""
+    out: list[dict] = []
+    files = index.get("files", {})
+    for rel in sorted(files):
+        by_target: dict[str, set[str]] = {}
+        for dep in files[rel].get("deps", []):
+            dtype = dep.get("type", "")
+            if dtype not in _EXPLICIT_DIRECTIVE_TYPES:
+                continue
+            by_target.setdefault(dep["to"], set()).add(dtype)
+        for target in sorted(by_target):
+            types = by_target[target]
+            if len(types) >= 2:
+                joined = ", ".join(sorted(types))
+                out.append(_finding(
+                    "conflicting-directive", "warning", rel,
+                    f"{target} is referenced by multiple directive types ({joined})",
+                ))
+    return out
