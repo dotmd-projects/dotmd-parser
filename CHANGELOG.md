@@ -3,6 +3,17 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-06-20
+
+### Added
+- **`plan` サブコマンド** — 依存グラフから `@delegate` の並列実行プランを
+  静的生成。topological レベルを並列バッチ化し、各タスクに subtree の
+  context を同梱した `dotmd-plan/v1` JSON を出力。同一バッチ内の共有依存を
+  `conflicts[]`（警告のみ・並列維持）、相互到達タスクを `cycles[]` として
+  事前検出する。`--ascii` で人間可読ビュー、`--strict` で CI ゲート、
+  `--out` でファイル出力。`build_plan` / `render_ascii` を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-20-parallel-delegation-plan-design.md`
+
 ## [0.7.0] - 2026-05-13
 
 ### Added
