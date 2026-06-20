@@ -163,7 +163,7 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser dotmd-index <path> --push-openrag` | 生成後に OpenRAG に取り込み (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | `.claude/dotmd-index.json` をビルド・保存 |
 | `dotmd-parser index <path> --scope <subdir>` | サブディレクトリのみ増分インデックス (既存とマージ) |
-| `dotmd-parser check <path>` | 循環依存・欠損参照があれば非ゼロ終了 (CI向け) |
+| `dotmd-parser check <path>` | 健全性ゲート (CI): 循環・欠損・未解決 placeholder・矛盾 directive |
 | `dotmd-parser affects <path> <file>` | `<file>` に依存しているファイル一覧 |
 | `dotmd-parser deps <path> <file>` | `<file>` の直接依存先 |
 | `dotmd-parser digest <path>` | LLM向けのトークン効率的な要約 |
@@ -183,6 +183,30 @@ dotmd-parser dotmd-index ./my-skill/       # ./my-skill/dotmd-index.md を生成
 dotmd-parser index ./my-skill/             # 一度実行、ファイル変更まで再利用
 dotmd-parser digest ./my-skill/            # LLM 向けのコンパクトな要約
 dotmd-parser affects ./my-skill/ shared/role.md
+```
+
+### `check` — ガイダンス健全性ゲート (CI)
+
+依存グラフの決定的な健全性チェック。循環・欠落参照（error）に加え、未解決の
+`{{placeholder}}` と矛盾 directive（warning）を検出します。孤立ファイルは opt-in。
+
+```bash
+dotmd-parser check ./my-skill                       # text、error で失敗
+dotmd-parser check ./my-skill --fail-on warning     # warning でも失敗
+dotmd-parser check ./my-skill --format json
+dotmd-parser check ./my-skill --format sarif --out dotmd.sarif
+dotmd-parser check ./my-skill --check orphans       # 孤立ファイル検出(opt-in)
+```
+
+`--fail-on` で終了コードの閾値を選びます（既定 `error` / `warning` / `never`）。
+`--format sarif` を GitHub の `upload-sarif` アクションと組み合わせると PR に
+インライン注釈が付きます:
+
+```yaml
+- run: dotmd-parser check . --format sarif --out dotmd.sarif --fail-on never
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: dotmd.sarif }
+- run: dotmd-parser check . --fail-on warning   # PR をゲート
 ```
 
 ### `dotmd-index.md` (フォルダ概要を 1 ファイルで)
