@@ -1,6 +1,6 @@
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
-    _placeholder_findings, _conflicting_directive_findings,
+    _placeholder_findings, _conflicting_directive_findings, _orphan_findings,
 )
 
 
@@ -100,3 +100,19 @@ def test_conflicting_directive_ignores_read_ref():
         {"to": "a.md", "type": "read-ref"},
     ]}})
     assert _conflicting_directive_findings(idx) == []
+
+
+def test_orphan_findings_flags_unreferenced_md(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# s", encoding="utf-8")
+    (tmp_path / "used.md").write_text("# u", encoding="utf-8")
+    (tmp_path / "orphan.md").write_text("# o", encoding="utf-8")
+    idx = _idx(files={"SKILL.md": {"type": "skill"}, "used.md": {"type": "reference"}},
+               root=str(tmp_path))
+    res = _orphan_findings(idx, str(tmp_path))
+    assert [f["path"] for f in res] == ["orphan.md"]
+    assert res[0]["rule"] == "orphan-file" and res[0]["severity"] == "warning"
+
+
+def test_orphan_findings_none_root_returns_empty():
+    idx = _idx(files={"SKILL.md": {"type": "skill"}})
+    assert _orphan_findings(idx, None) == []

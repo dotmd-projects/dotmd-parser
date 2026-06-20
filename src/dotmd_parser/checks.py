@@ -12,6 +12,8 @@ Finding shape:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 CHECK_SCHEMA = "dotmd-check/v1"
 
 _GRAPH_WARNING_RULES = {
@@ -90,4 +92,30 @@ def _conflicting_directive_findings(index: dict) -> list[dict]:
                     "conflicting-directive", "warning", rel,
                     f"{target} is referenced by multiple directive types ({joined})",
                 ))
+    return out
+
+
+def _orphan_findings(index: dict, root: str | None) -> list[dict]:
+    """Warn about .md files on disk that no graph node references."""
+    if root is None:
+        return []
+    base = Path(root)
+    if base.is_file():
+        base = base.parent
+    if not base.is_dir():
+        return []
+    node_set = set(index.get("files", {}).keys())
+    out: list[dict] = []
+    for path in sorted(base.rglob("*.md")):
+        rel_parts = path.relative_to(base).parts
+        if any(part.startswith(".") for part in rel_parts):
+            continue
+        rel = path.relative_to(base).as_posix()
+        if "node_modules" in rel:
+            continue
+        if not path.is_file():
+            continue
+        if rel not in node_set:
+            out.append(_finding("orphan-file", "warning", rel,
+                               "file is not referenced by any node"))
     return out
