@@ -252,6 +252,19 @@ def test_build_plan_mutual_cycle_excluded_and_reported():
     assert plan["tasks"]["b.md"]["level"] is None
 
 
+def test_build_plan_three_node_cycle_all_excluded():
+    idx = _idx({
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [_d("c.md", "delegate")],
+        "c.md": [_d("a.md", "delegate")],
+    })
+    plan = build_plan(idx)
+    assert plan["batches"] == []
+    assert plan["stats"]["cycles"] >= 1
+    for t in ("a.md", "b.md", "c.md"):
+        assert plan["tasks"][t]["level"] is None
+
+
 def test_build_plan_no_delegates_warns():
     idx = _idx({"a.md": [_d("b.md", "include")], "b.md": []})
     plan = build_plan(idx)

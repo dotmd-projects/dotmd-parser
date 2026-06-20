@@ -57,9 +57,22 @@ def test_plan_out_writes_file(tmp_path, capsys):
     assert capsys.readouterr().out.strip() == ""  # nothing on stdout
 
 
-def test_plan_strict_exits_zero_without_cycles(tmp_path):
+def test_plan_strict_exits_one_when_conflicts_present(tmp_path):
     skill = _make_skill(tmp_path)
     # conflicts exist here, so --strict should exit 1
     with pytest.raises(SystemExit) as exc:
         run(["plan", str(skill), "--strict"])
     assert exc.value.code == 1
+
+
+def test_plan_strict_exits_zero_when_clean(tmp_path):
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "SKILL.md").write_text(
+        "# Root\n\n@delegate agents/a.md --parallel\n@delegate agents/b.md --parallel\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "agents" / "a.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "agents" / "b.md").write_text("# B\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        run(["plan", str(tmp_path), "--strict"])
+    assert exc.value.code == 0
