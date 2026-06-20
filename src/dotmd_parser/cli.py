@@ -58,6 +58,13 @@ from dotmd_parser.index_md import (
     generate_index_md as _generate_index_md,
     write_index_md as _write_index_md,
 )
+from dotmd_parser.checks import (
+    run_checks as _run_checks,
+    format_text as _format_check_text,
+    format_json as _format_check_json,
+    format_sarif as _format_check_sarif,
+    exit_code as _check_exit_code,
+)
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -181,16 +188,22 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     idx = build_index(args.path)
-    stats = idx["stats"]
-    print(
-        f"{stats['files']} files, {stats['edges']} edges — "
-        f"cycles:{stats['cycles']} missing:{stats['missing']}"
-    )
-    for cycle in idx.get("cycles", []):
-        print(f"  CYCLE   {cycle}")
-    for miss in idx.get("missing", []):
-        print(f"  MISSING {miss}")
-    return 1 if (stats["cycles"] or stats["missing"]) else 0
+    enable_orphans = bool(args.check and "orphans" in args.check)
+    findings = _run_checks(idx, root=args.path, enable_orphans=enable_orphans)
+
+    if args.format == "json":
+        report = _format_check_json(findings, idx)
+    elif args.format == "sarif":
+        report = _format_check_sarif(findings, idx)
+    else:
+        report = _format_check_text(findings, idx)
+
+    if args.out:
+        Path(args.out).write_text(report + "\n", encoding="utf-8")
+    else:
+        print(report)
+
+    return _check_exit_code(findings, args.fail_on)
 
 
 def cmd_affects(args: argparse.Namespace) -> int:
@@ -436,8 +449,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_index.set_defaults(func=cmd_index)
 
-    p_check = sub.add_parser("check", help="Fail on cycles or missing references")
+    p_check = sub.add_parser("check", help="Health-check the graph (CI gate)")
     p_check.add_argument("path", help="Directory or SKILL.md")
+    p_check.add_argument(
+        "--format", choices=["text", "json", "sarif"], default="text",
+        help="Report format (default: text)",
+    )
+    p_check.add_argument(
+        "--fail-on", choices=["error", "warning", "never"], default="error",
+        dest="fail_on",
+        help="Exit non-zero threshold (default: error)",
+    )
+    p_check.add_argument(
+        "--check", action="append", choices=["orphans"],
+        help="Enable an optional check (repeatable; e.g. --check orphans)",
+    )
+    p_check.add_argument("--out", help="Write the report to FILE instead of stdout")
     p_check.set_defaults(func=cmd_check)
 
     p_affects = sub.add_parser("affects", help="List files transitively depending on <file>")
