@@ -189,3 +189,45 @@ def format_json(findings: list[dict], index: dict) -> str:
         "findings": findings,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _camel(rule_id: str) -> str:
+    parts = rule_id.split("-")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
+def format_sarif(findings: list[dict], index: dict) -> str:
+    """Render findings as SARIF 2.1.0 JSON (for GitHub code scanning)."""
+    from dotmd_parser import __version__  # local import avoids cycle at import time
+
+    rules: dict[str, dict] = {}
+    results: list[dict] = []
+    for f in findings:
+        rule_id = f["rule"]
+        rules.setdefault(rule_id, {"id": rule_id, "name": _camel(rule_id)})
+        result: dict = {
+            "ruleId": rule_id,
+            "level": f["severity"],
+            "message": {"text": f["message"]},
+        }
+        if f.get("path"):
+            physical: dict = {"artifactLocation": {"uri": f["path"]}}
+            if f.get("line"):
+                physical["region"] = {"startLine": f["line"]}
+            result["locations"] = [{"physicalLocation": physical}]
+        results.append(result)
+
+    sarif = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "dotmd-parser",
+                "informationUri": "https://github.com/dotmd-projects/dotmd-parser",
+                "version": __version__,
+                "rules": list(rules.values()),
+            }},
+            "results": results,
+        }],
+    }
+    return json.dumps(sarif, ensure_ascii=False, indent=2)

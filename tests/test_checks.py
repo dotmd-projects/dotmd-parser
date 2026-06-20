@@ -3,7 +3,7 @@ import json
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
     _placeholder_findings, _conflicting_directive_findings, _orphan_findings,
-    run_checks, summarize, exit_code, format_text, format_json,
+    run_checks, summarize, exit_code, format_text, format_json, format_sarif,
 )
 
 
@@ -190,3 +190,27 @@ def test_format_json_shape():
     assert payload["stats"]["errors"] == 0
     assert len(payload["findings"]) == 1
     assert payload["findings"][0]["rule"] == "unresolved-placeholder"
+
+
+def test_format_sarif_shape_and_locations():
+    idx = _idx(
+        files={"a.md": {"type": "agent"}},
+        missing=["gone.md"],
+        cycles=["Circular reference: /x/a.md -> /x/a.md"],
+    )
+    findings = run_checks(idx)
+    sarif = json.loads(format_sarif(findings, idx))
+    assert sarif["version"] == "2.1.0"
+    driver = sarif["runs"][0]["tool"]["driver"]
+    assert driver["name"] == "dotmd-parser"
+    rule_ids = {r["id"] for r in driver["rules"]}
+    assert {"missing-reference", "circular"} <= rule_ids
+
+    results = sarif["runs"][0]["results"]
+    by_rule = {r["ruleId"]: r for r in results}
+    # missing-reference has a path -> has a location
+    assert by_rule["missing-reference"]["level"] == "error"
+    assert (by_rule["missing-reference"]["locations"][0]["physicalLocation"]
+            ["artifactLocation"]["uri"] == "gone.md")
+    # circular has path "" -> no locations key
+    assert "locations" not in by_rule["circular"]
