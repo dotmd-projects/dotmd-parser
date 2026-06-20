@@ -330,3 +330,10 @@ def test_invariant_batches_are_antichains_and_cover_all_tasks():
 
     # Levels are contiguous and ascending.
     assert [b["level"] for b in plan["batches"]] == list(range(len(plan["batches"])))
+
+
+def test_build_plan_is_exported_from_package():
+    import dotmd_parser
+    assert hasattr(dotmd_parser, "build_plan")
+    assert hasattr(dotmd_parser, "render_ascii")
+    assert "build_plan" in dotmd_parser.__all__

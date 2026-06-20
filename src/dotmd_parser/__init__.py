@@ -71,6 +71,10 @@ from dotmd_parser.index_md import (
     INDEX_MD_SCHEMA,
 )
 from dotmd_parser.openrag import push_to_openrag
+from dotmd_parser.plan import (
+    build_plan,
+    render_ascii,
+)
 
 __all__ = [
     "__version__",
@@ -128,4 +132,7 @@ __all__ = [
     "INDEX_MD_SCHEMA",
     # openrag
     "push_to_openrag",
+    # plan
+    "build_plan",
+    "render_ascii",
 ]
