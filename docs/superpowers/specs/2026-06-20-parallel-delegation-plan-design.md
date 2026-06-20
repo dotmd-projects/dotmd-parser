@@ -102,6 +102,7 @@ plan.py
       "type": "agent",
       "parallel_flag": true,
       "depends_on": [],
+      "level": 0,
       "context": [
         {"path": "shared/role.md", "type": "shared", "title": "Role"},
         {"path": "shared/account-items.md", "type": "shared", "title": "Accounts"}
@@ -123,7 +124,9 @@ plan.py
   複数の delegate 由来でフラグが割れる場合は **いずれかが true なら true**。
 - `tasks[id].depends_on`: prereq タスク（task DAG の親）。path 昇順。
 - `tasks[id].context`: subtree の非タスク・タスク両方のファイル（親がサブエージェントに渡す材料）。
-- `tasks[id].level`: 通常は省略（batches で表現）。循環で leveling 除外された場合のみ `null`。
+- `tasks[id].level`: 各タスクの実行レベル（int）。循環で leveling 除外された場合は `null`。
+  batches でも表現されるが、消費側が batches を参照せずタスク単体で level を読めるよう
+  全タスクに付与する（2026-06-20 実装時に決定。当初案の「通常は省略」から変更）。
 - `cycles[]`: include/ref 循環メッセージ + task cycle メッセージ。
 - `warnings[]`: missing delegate ターゲット等、index 由来の関連警告を転記。
 
