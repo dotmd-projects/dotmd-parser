@@ -83,7 +83,10 @@ def _conflicting_directive_findings(index: dict) -> list[dict]:
             dtype = dep.get("type", "")
             if dtype not in _EXPLICIT_DIRECTIVE_TYPES:
                 continue
-            by_target.setdefault(dep["to"], set()).add(dtype)
+            target = dep.get("to", "")
+            if not target:
+                continue
+            by_target.setdefault(target, set()).add(dtype)
         for target in sorted(by_target):
             types = by_target[target]
             if len(types) >= 2:
@@ -107,10 +110,10 @@ def _orphan_findings(index: dict, root: str | None) -> list[dict]:
     node_set = set(index.get("files", {}).keys())
     out: list[dict] = []
     for path in sorted(base.rglob("*.md")):
-        rel_parts = path.relative_to(base).parts
-        if any(part.startswith(".") for part in rel_parts):
+        rel_path = path.relative_to(base)
+        if any(part.startswith(".") for part in rel_path.parts):
             continue
-        rel = path.relative_to(base).as_posix()
+        rel = rel_path.as_posix()
         if "node_modules" in rel:
             continue
         if not path.is_file():

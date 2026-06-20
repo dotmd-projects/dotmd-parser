@@ -119,6 +119,18 @@ def test_orphan_findings_none_root_returns_empty():
     assert _orphan_findings(idx, None) == []
 
 
+def test_orphan_findings_skips_hidden_and_node_modules(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# s", encoding="utf-8")
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / ".hidden" / "secret.md").write_text("# h", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dep.md").write_text("# d", encoding="utf-8")
+    (tmp_path / "real-orphan.md").write_text("# o", encoding="utf-8")
+    idx = _idx(files={"SKILL.md": {"type": "skill"}}, root=str(tmp_path))
+    res = _orphan_findings(idx, str(tmp_path))
+    assert [f["path"] for f in res] == ["real-orphan.md"]
+
+
 def test_run_checks_integrates_and_respects_orphan_flag(tmp_path):
     (tmp_path / "SKILL.md").write_text("# s", encoding="utf-8")
     (tmp_path / "orphan.md").write_text("# o", encoding="utf-8")
