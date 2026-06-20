@@ -56,3 +56,44 @@ def test_task_nodes_collects_only_delegate_targets():
 def test_task_nodes_empty_when_no_delegates():
     idx = _idx({"a.md": [_d("b.md", "include")], "b.md": []})
     assert _task_nodes(idx) == set()
+
+
+from dotmd_parser.plan import _task_dag, _task_cycles
+
+
+def test_task_dag_links_prereqs_via_subtree():
+    # SKILL delegates a; a delegates b. So b is a prereq of a.
+    idx = _idx({
+        "SKILL.md": [_d("a.md", "delegate")],
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [],
+    })
+    dag = _task_dag(idx)
+    assert dag == {"a.md": {"b.md"}, "b.md": set()}
+
+
+def test_task_dag_independent_tasks_have_no_prereqs():
+    idx = _idx({
+        "SKILL.md": [_d("a.md", "delegate", True), _d("b.md", "delegate", True)],
+        "a.md": [_d("shared.md", "include")],
+        "b.md": [_d("shared.md", "include")],
+        "shared.md": [],
+    })
+    dag = _task_dag(idx)
+    assert dag == {"a.md": set(), "b.md": set()}
+
+
+def test_task_cycles_detects_mutual_pairs():
+    idx = _idx({
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [_d("a.md", "delegate")],
+    })
+    dag = _task_dag(idx)
+    cycles = _task_cycles(dag)
+    assert len(cycles) == 1
+    assert set(cycles[0]) == {"a.md", "b.md"}
+
+
+def test_task_cycles_empty_for_acyclic():
+    dag = {"a.md": {"b.md"}, "b.md": set()}
+    assert _task_cycles(dag) == []

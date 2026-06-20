@@ -36,3 +36,22 @@ def _task_nodes(index: dict) -> set[str]:
             if dep.get("type") == "delegate":
                 tasks.add(dep["to"])
     return tasks
+
+
+def _task_dag(index: dict) -> dict[str, set[str]]:
+    """Map each task to the set of other tasks reachable from its subtree."""
+    tasks = _task_nodes(index)
+    return {task: (_reachable(index, task) & tasks) for task in tasks}
+
+
+def _task_cycles(dag: dict[str, set[str]]) -> list[tuple[str, str]]:
+    """Return unordered mutual-prereq task pairs (each pair once)."""
+    cycles: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for a, prereqs in dag.items():
+        for b in prereqs:
+            if a in dag.get(b, set()) and (a, b) not in seen:
+                cycles.append((a, b))
+                seen.add((a, b))
+                seen.add((b, a))
+    return cycles
