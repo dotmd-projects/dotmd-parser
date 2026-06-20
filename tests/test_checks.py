@@ -1,5 +1,6 @@
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
+    _placeholder_findings,
 )
 
 
@@ -47,3 +48,22 @@ def test_graph_warning_findings_promotes_depth_and_read_error_only():
     rules = sorted(f["rule"] for f in res)
     assert rules == ["depth-exceeded", "read-error"]
     assert all(f["severity"] == "error" for f in res)
+
+
+def test_placeholder_findings_one_per_var_sorted():
+    idx = _idx(files={
+        "b.md": {"type": "shared"},
+        "a.md": {"type": "agent", "placeholders": ["year", "company_id"]},
+    })
+    res = _placeholder_findings(idx)
+    assert [(f["path"], f["message"]) for f in res] == [
+        ("a.md", "unresolved placeholder: {{company_id}}"),
+        ("a.md", "unresolved placeholder: {{year}}"),
+    ]
+    assert all(f["rule"] == "unresolved-placeholder" and f["severity"] == "warning"
+               for f in res)
+
+
+def test_placeholder_findings_empty_when_none():
+    idx = _idx(files={"a.md": {"type": "agent"}})
+    assert _placeholder_findings(idx) == []

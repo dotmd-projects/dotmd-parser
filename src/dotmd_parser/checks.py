@@ -53,3 +53,16 @@ def _graph_warning_findings(index: dict) -> list[dict]:
         out.append(_finding(rule, "error", warning.get("path", ""),
                             warning.get("message", "")))
     return out
+
+
+def _placeholder_findings(index: dict) -> list[dict]:
+    """One warning finding per unresolved {{var}} (sorted by path, var)."""
+    out: list[dict] = []
+    files = index.get("files", {})
+    for rel in sorted(files):
+        for var in sorted(files[rel].get("placeholders", []) or []):
+            out.append(_finding(
+                "unresolved-placeholder", "warning", rel,
+                f"unresolved placeholder: {{{{{var}}}}}",
+            ))
+    return out
