@@ -12,6 +12,7 @@ Finding shape:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 CHECK_SCHEMA = "dotmd-check/v1"
@@ -154,3 +155,37 @@ def exit_code(findings: list[dict], fail_on: str) -> int:
         return 1 if (counts["errors"] or counts["warnings"]) else 0
     # default: "error"
     return 1 if counts["errors"] else 0
+
+
+def format_text(findings: list[dict], index: dict) -> str:
+    """Render findings as a backward-compatible text summary + detail lines."""
+    stats = index.get("stats", {})
+    counts = summarize(findings)
+    lines = [
+        f"{stats.get('files', 0)} files, {stats.get('edges', 0)} edges — "
+        f"errors:{counts['errors']} warnings:{counts['warnings']}"
+    ]
+    for f in findings:
+        loc = f.get("path") or "-"
+        lines.append(
+            f"  [{f['severity'].upper()}] {f['rule']}: {loc} — {f['message']}"
+        )
+    return "\n".join(lines)
+
+
+def format_json(findings: list[dict], index: dict) -> str:
+    """Render findings as dotmd-check/v1 JSON."""
+    stats = index.get("stats", {})
+    counts = summarize(findings)
+    payload = {
+        "schema": CHECK_SCHEMA,
+        "root": index.get("root", ""),
+        "stats": {
+            "files": stats.get("files", 0),
+            "edges": stats.get("edges", 0),
+            "errors": counts["errors"],
+            "warnings": counts["warnings"],
+        },
+        "findings": findings,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)

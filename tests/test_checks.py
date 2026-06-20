@@ -1,7 +1,9 @@
+import json
+
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
     _placeholder_findings, _conflicting_directive_findings, _orphan_findings,
-    run_checks, summarize, exit_code,
+    run_checks, summarize, exit_code, format_text, format_json,
 )
 
 
@@ -168,3 +170,23 @@ def test_exit_code_matrix():
     assert exit_code(warn, "warning") == 1
     assert exit_code(warn, "never") == 0
     assert exit_code(clean, "warning") == 0
+
+
+def test_format_text_has_summary_and_lines():
+    idx = _idx(files={"a.md": {"type": "agent"}}, missing=["gone.md"], edges=2)
+    findings = run_checks(idx)
+    text = format_text(findings, idx)
+    lines = text.splitlines()
+    assert "errors:1 warnings:0" in lines[0]
+    assert any("[ERROR]" in ln and "missing-reference" in ln for ln in lines)
+
+
+def test_format_json_shape():
+    idx = _idx(files={"a.md": {"type": "agent", "placeholders": ["v"]}}, edges=0)
+    findings = run_checks(idx)
+    payload = json.loads(format_json(findings, idx))
+    assert payload["schema"] == "dotmd-check/v1"
+    assert payload["stats"]["warnings"] == 1
+    assert payload["stats"]["errors"] == 0
+    assert len(payload["findings"]) == 1
+    assert payload["findings"][0]["rule"] == "unresolved-placeholder"
