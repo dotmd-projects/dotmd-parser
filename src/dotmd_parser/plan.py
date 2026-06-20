@@ -86,3 +86,22 @@ def _levels(
         sorted(t for t, lvl in levels_map.items() if lvl == depth)
         for depth in range(max_level + 1)
     ]
+
+
+def _conflicts(index: dict, levels: list[list[str]]) -> list[dict]:
+    """Report same-batch task pairs that share a non-task dependency."""
+    tasks = _task_nodes(index)
+    out: list[dict] = []
+    for depth, batch in enumerate(levels):
+        reach = {task: _reachable(index, task) for task in batch}
+        for i in range(len(batch)):
+            for j in range(i + 1, len(batch)):
+                a, b = batch[i], batch[j]
+                shared = (reach[a] & reach[b]) - tasks
+                if shared:
+                    out.append({
+                        "level": depth,
+                        "between": [a, b],
+                        "shared": sorted(shared),
+                    })
+    return out

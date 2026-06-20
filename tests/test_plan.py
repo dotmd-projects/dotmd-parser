@@ -121,3 +121,39 @@ def test_levels_excludes_cycle_members():
 def test_levels_empty_when_all_excluded():
     dag = {"a.md": {"b.md"}, "b.md": {"a.md"}}
     assert _levels(dag, excluded={"a.md", "b.md"}) == []
+
+
+from dotmd_parser.plan import _conflicts
+
+
+def test_conflicts_reports_shared_dependency_in_batch():
+    idx = _idx({
+        "a.md": [_d("shared/role.md", "include")],
+        "b.md": [_d("shared/role.md", "include")],
+        "shared/role.md": [],
+    })
+    conflicts = _conflicts(idx, [["a.md", "b.md"]])
+    assert conflicts == [
+        {"level": 0, "between": ["a.md", "b.md"], "shared": ["shared/role.md"]}
+    ]
+
+
+def test_conflicts_none_when_no_overlap():
+    idx = _idx({
+        "a.md": [_d("x.md", "include")],
+        "b.md": [_d("y.md", "include")],
+        "x.md": [],
+        "y.md": [],
+    })
+    assert _conflicts(idx, [["a.md", "b.md"]]) == []
+
+
+def test_conflicts_ignore_shared_task_nodes():
+    # a and b both reach task c -> c is a task, so not counted as a conflict.
+    idx = _idx({
+        "a.md": [_d("c.md", "delegate")],
+        "b.md": [_d("c.md", "delegate")],
+        "c.md": [],
+    })
+    # batch is [a, b]; their only shared reachable is task c -> excluded
+    assert _conflicts(idx, [["a.md", "b.md"]]) == []
