@@ -1,6 +1,7 @@
 from dotmd_parser.checks import (
     _circular_findings, _missing_findings, _graph_warning_findings,
     _placeholder_findings, _conflicting_directive_findings, _orphan_findings,
+    run_checks, summarize, exit_code,
 )
 
 
@@ -116,3 +117,42 @@ def test_orphan_findings_flags_unreferenced_md(tmp_path):
 def test_orphan_findings_none_root_returns_empty():
     idx = _idx(files={"SKILL.md": {"type": "skill"}})
     assert _orphan_findings(idx, None) == []
+
+
+def test_run_checks_integrates_and_respects_orphan_flag(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# s", encoding="utf-8")
+    (tmp_path / "orphan.md").write_text("# o", encoding="utf-8")
+    idx = _idx(
+        files={"SKILL.md": {"type": "skill", "placeholders": ["x"]}},
+        missing=["gone.md"], root=str(tmp_path),
+    )
+    without = run_checks(idx, root=str(tmp_path), enable_orphans=False)
+    rules_without = {f["rule"] for f in without}
+    assert "missing-reference" in rules_without
+    assert "unresolved-placeholder" in rules_without
+    assert "orphan-file" not in rules_without
+
+    with_orphans = run_checks(idx, root=str(tmp_path), enable_orphans=True)
+    assert "orphan-file" in {f["rule"] for f in with_orphans}
+
+
+def test_summarize_counts_by_severity():
+    findings = [
+        {"rule": "circular", "severity": "error", "path": "", "message": "", "line": None},
+        {"rule": "unresolved-placeholder", "severity": "warning", "path": "a", "message": "", "line": None},
+        {"rule": "conflicting-directive", "severity": "warning", "path": "a", "message": "", "line": None},
+    ]
+    assert summarize(findings) == {"errors": 1, "warnings": 2}
+
+
+def test_exit_code_matrix():
+    err = [{"rule": "x", "severity": "error", "path": "", "message": "", "line": None}]
+    warn = [{"rule": "x", "severity": "warning", "path": "", "message": "", "line": None}]
+    clean: list[dict] = []
+    assert exit_code(err, "error") == 1
+    assert exit_code(err, "warning") == 1
+    assert exit_code(err, "never") == 0
+    assert exit_code(warn, "error") == 0
+    assert exit_code(warn, "warning") == 1
+    assert exit_code(warn, "never") == 0
+    assert exit_code(clean, "warning") == 0

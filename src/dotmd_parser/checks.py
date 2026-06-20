@@ -119,3 +119,35 @@ def _orphan_findings(index: dict, root: str | None) -> list[dict]:
             out.append(_finding("orphan-file", "warning", rel,
                                "file is not referenced by any node"))
     return out
+
+
+def run_checks(index: dict, root: str | None = None,
+               enable_orphans: bool = False) -> list[dict]:
+    """Run all enabled checks and return a flat list of findings."""
+    findings: list[dict] = []
+    findings += _circular_findings(index)
+    findings += _missing_findings(index)
+    findings += _graph_warning_findings(index)
+    findings += _placeholder_findings(index)
+    findings += _conflicting_directive_findings(index)
+    if enable_orphans:
+        findings += _orphan_findings(index, root)
+    return findings
+
+
+def summarize(findings: list[dict]) -> dict:
+    """Count findings by severity."""
+    errors = sum(1 for f in findings if f.get("severity") == "error")
+    warnings = sum(1 for f in findings if f.get("severity") == "warning")
+    return {"errors": errors, "warnings": warnings}
+
+
+def exit_code(findings: list[dict], fail_on: str) -> int:
+    """Map findings to a CI exit code per the fail_on threshold."""
+    counts = summarize(findings)
+    if fail_on == "never":
+        return 0
+    if fail_on == "warning":
+        return 1 if (counts["errors"] or counts["warnings"]) else 0
+    # default: "error"
+    return 1 if counts["errors"] else 0
