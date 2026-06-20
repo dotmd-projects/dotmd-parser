@@ -157,3 +157,38 @@ def test_conflicts_ignore_shared_task_nodes():
     })
     # batch is [a, b]; their only shared reachable is task c -> excluded
     assert _conflicts(idx, [["a.md", "b.md"]]) == []
+
+
+from dotmd_parser.plan import _context_of
+
+
+def test_context_of_lists_subtree_files_sorted():
+    idx = {
+        "root": "/x",
+        "files": {
+            "a.md": {"type": "agent", "title": "A",
+                     "deps": [{"to": "shared/role.md", "type": "include"},
+                              {"to": "shared/acc.md", "type": "include"}]},
+            "shared/role.md": {"type": "shared", "title": "Role", "deps": []},
+            "shared/acc.md": {"type": "shared", "title": "Accounts", "deps": []},
+        },
+        "cycles": [],
+        "stats": {"files": 3},
+    }
+    assert _context_of(idx, "a.md") == [
+        {"path": "shared/acc.md", "type": "shared", "title": "Accounts"},
+        {"path": "shared/role.md", "type": "shared", "title": "Role"},
+    ]
+
+
+def test_context_of_skips_missing_files():
+    idx = {
+        "root": "/x",
+        "files": {
+            "a.md": {"type": "agent", "title": "A",
+                     "deps": [{"to": "gone.md", "type": "include"}]},
+        },
+        "cycles": [],
+        "stats": {"files": 1},
+    }
+    assert _context_of(idx, "a.md") == []

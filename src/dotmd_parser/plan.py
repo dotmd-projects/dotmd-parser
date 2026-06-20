@@ -105,3 +105,19 @@ def _conflicts(index: dict, levels: list[list[str]]) -> list[dict]:
                         "shared": sorted(shared),
                     })
     return out
+
+
+def _context_of(index: dict, task: str) -> list[dict]:
+    """Return subtree files for `task` as {path, type, title}, sorted by path."""
+    files = index.get("files", {})
+    out: list[dict] = []
+    for rel in sorted(_reachable(index, task)):
+        entry = files.get(rel)
+        if entry is None:
+            continue
+        out.append({
+            "path": rel,
+            "type": entry.get("type", "reference"),
+            "title": entry.get("title", ""),
+        })
+    return out
