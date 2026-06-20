@@ -299,3 +299,34 @@ def test_render_ascii_reports_cycles():
     })
     text = render_ascii(build_plan(idx))
     assert "cycle" in text.lower()
+
+
+def test_invariant_batches_are_antichains_and_cover_all_tasks():
+    idx = _idx({
+        "SKILL.md": [
+            _d("a.md", "delegate", True),
+            _d("b.md", "delegate", True),
+            _d("c.md", "delegate"),
+        ],
+        "a.md": [_d("shared.md", "include")],
+        "b.md": [_d("a.md", "delegate")],   # b depends on a
+        "c.md": [],
+        "shared.md": [],
+    })
+    plan = build_plan(idx)
+    dag = _task_dag(idx)
+
+    # Every non-excluded task appears exactly once across batches.
+    flat = [t for batch in plan["batches"] for t in batch["tasks"]]
+    assert len(flat) == len(set(flat))
+    excluded = {t for t, rec in plan["tasks"].items() if rec.get("level") is None}
+    assert set(flat) == (set(plan["tasks"]) - excluded)
+
+    # Antichain: no task shares a batch with one of its prereqs.
+    for batch in plan["batches"]:
+        members = set(batch["tasks"])
+        for task in batch["tasks"]:
+            assert not (dag[task] & members), f"{task} batched with a prereq"
+
+    # Levels are contiguous and ascending.
+    assert [b["level"] for b in plan["batches"]] == list(range(len(plan["batches"])))

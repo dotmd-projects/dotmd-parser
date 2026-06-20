@@ -170,6 +170,12 @@ def build_plan(index: dict) -> dict:
     ]
 
     task_entries: dict[str, dict] = {}
+    # Build a map from task to its level.
+    level_map: dict[str, int] = {}
+    for depth, batch in enumerate(levels):
+        for task in batch:
+            level_map[task] = depth
+
     for task in sorted(tasks):
         entry = files.get(task, {})
         record: dict = {
@@ -181,6 +187,8 @@ def build_plan(index: dict) -> dict:
         }
         if task in excluded:
             record["level"] = None
+        else:
+            record["level"] = level_map.get(task)
         task_entries[task] = record
 
     cycles: list[str] = list(index.get("cycles", []))
