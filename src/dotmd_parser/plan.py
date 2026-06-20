@@ -26,3 +26,13 @@ def _reachable(index: dict, start: str) -> set[str]:
                 stack.append(target)
     seen.discard(start)
     return seen
+
+
+def _task_nodes(index: dict) -> set[str]:
+    """Return the set of `@delegate` target paths (the plan's tasks)."""
+    tasks: set[str] = set()
+    for entry in index.get("files", {}).values():
+        for dep in entry.get("deps", []):
+            if dep.get("type") == "delegate":
+                tasks.add(dep["to"])
+    return tasks
