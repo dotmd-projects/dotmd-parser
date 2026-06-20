@@ -55,3 +55,34 @@ def _task_cycles(dag: dict[str, set[str]]) -> list[tuple[str, str]]:
                 seen.add((a, b))
                 seen.add((b, a))
     return cycles
+
+
+def _levels(
+    dag: dict[str, set[str]],
+    excluded: set[str] | None = None,
+) -> list[list[str]]:
+    """Group tasks into topological levels (parallel batches)."""
+    excluded = excluded or set()
+    active = {
+        task: {p for p in prereqs if p not in excluded}
+        for task, prereqs in dag.items()
+        if task not in excluded
+    }
+
+    memo: dict[str, int] = {}
+
+    def level_of(task: str) -> int:
+        if task in memo:
+            return memo[task]
+        prereqs = active.get(task, set())
+        memo[task] = 0 if not prereqs else 1 + max(level_of(p) for p in prereqs)
+        return memo[task]
+
+    levels_map = {task: level_of(task) for task in active}
+    if not levels_map:
+        return []
+    max_level = max(levels_map.values())
+    return [
+        sorted(t for t, lvl in levels_map.items() if lvl == depth)
+        for depth in range(max_level + 1)
+    ]

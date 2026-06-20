@@ -97,3 +97,27 @@ def test_task_cycles_detects_mutual_pairs():
 def test_task_cycles_empty_for_acyclic():
     dag = {"a.md": {"b.md"}, "b.md": set()}
     assert _task_cycles(dag) == []
+
+
+from dotmd_parser.plan import _levels
+
+
+def test_levels_independent_tasks_one_batch():
+    dag = {"a.md": set(), "b.md": set()}
+    assert _levels(dag) == [["a.md", "b.md"]]
+
+
+def test_levels_chain_two_batches():
+    dag = {"a.md": {"b.md"}, "b.md": set()}
+    # b has no prereqs -> level 0; a depends on b -> level 1
+    assert _levels(dag) == [["b.md"], ["a.md"]]
+
+
+def test_levels_excludes_cycle_members():
+    dag = {"a.md": {"b.md"}, "b.md": {"a.md"}, "c.md": set()}
+    assert _levels(dag, excluded={"a.md", "b.md"}) == [["c.md"]]
+
+
+def test_levels_empty_when_all_excluded():
+    dag = {"a.md": {"b.md"}, "b.md": {"a.md"}}
+    assert _levels(dag, excluded={"a.md", "b.md"}) == []
