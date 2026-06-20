@@ -11,6 +11,8 @@ Pure functions, stdlib only. The raw graph / parser are not touched.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 
 def _reachable(index: dict, start: str) -> set[str]:
     """Return nodes reachable from `start` via `deps`, excluding `start`."""
@@ -121,3 +123,91 @@ def _context_of(index: dict, task: str) -> list[dict]:
             "title": entry.get("title", ""),
         })
     return out
+
+
+PLAN_SCHEMA = "dotmd-plan/v1"
+
+
+def _utc_now() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _task_flags(index: dict) -> dict[str, bool]:
+    """Map each task to OR of `--parallel` across its delegate edges."""
+    flags: dict[str, bool] = {}
+    for entry in index.get("files", {}).values():
+        for dep in entry.get("deps", []):
+            if dep.get("type") == "delegate":
+                target = dep["to"]
+                flags[target] = flags.get(target, False) or bool(dep.get("parallel"))
+    return flags
+
+
+def build_plan(index: dict) -> dict:
+    """Build the dotmd-plan/v1 structure from a compact index."""
+    files = index.get("files", {})
+    tasks = _task_nodes(index)
+    dag = _task_dag(index)
+    flags = _task_flags(index)
+
+    cycle_pairs = _task_cycles(dag)
+    excluded: set[str] = set()
+    for a, b in cycle_pairs:
+        excluded.add(a)
+        excluded.add(b)
+
+    levels = _levels(dag, excluded=excluded)
+    conflicts = _conflicts(index, levels)
+
+    batches = [
+        {"level": depth, "parallelizable": len(batch) > 1, "tasks": batch}
+        for depth, batch in enumerate(levels)
+    ]
+
+    task_entries: dict[str, dict] = {}
+    for task in sorted(tasks):
+        entry = files.get(task, {})
+        record: dict = {
+            "title": entry.get("title", ""),
+            "type": entry.get("type", "agent"),
+            "parallel_flag": flags.get(task, False),
+            "depends_on": sorted(dag.get(task, set())),
+            "context": _context_of(index, task),
+        }
+        if task in excluded:
+            record["level"] = None
+        task_entries[task] = record
+
+    cycles: list[str] = list(index.get("cycles", []))
+    for a, b in cycle_pairs:
+        cycles.append(f"{a} <-> {b} (task cycle)")
+
+    warnings: list[str] = []
+    if not tasks:
+        warnings.append("no @delegate directives found")
+    for task in sorted(tasks):
+        entry = files.get(task)
+        if entry is None or entry.get("missing"):
+            warnings.append(f"delegate target missing: {task}")
+
+    return {
+        "schema": PLAN_SCHEMA,
+        "generated_at": _utc_now(),
+        "root": index.get("root", ""),
+        "stats": {
+            "tasks": len(tasks),
+            "batches": len(batches),
+            "conflicts": len(conflicts),
+            "cycles": len(cycles),
+        },
+        "batches": batches,
+        "tasks": task_entries,
+        "conflicts": conflicts,
+        "cycles": cycles,
+        "warnings": warnings,
+    }

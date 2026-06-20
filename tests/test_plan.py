@@ -3,10 +3,19 @@ from dotmd_parser.plan import _reachable
 
 def _idx(files: dict) -> dict:
     """Build a minimal compact-index dict from a {rel: deps_list} map."""
+    def infer_type(rel: str) -> str:
+        if rel.startswith("shared/"):
+            return "shared"
+        if rel.endswith("SKILL.md"):
+            return "skill"
+        if rel.startswith("agents/"):
+            return "agent"
+        return "agent"
+
     return {
         "root": "/x",
         "files": {
-            rel: {"type": "agent", "title": rel, "deps": deps}
+            rel: {"type": infer_type(rel), "title": rel, "deps": deps}
             for rel, deps in files.items()
         },
         "cycles": [],
@@ -192,3 +201,76 @@ def test_context_of_skips_missing_files():
         "stats": {"files": 1},
     }
     assert _context_of(idx, "a.md") == []
+
+
+from dotmd_parser.plan import build_plan
+
+
+def test_build_plan_parallel_batch_with_conflict():
+    idx = _idx({
+        "SKILL.md": [_d("a.md", "delegate", True), _d("b.md", "delegate", True)],
+        "a.md": [_d("shared/role.md", "include")],
+        "b.md": [_d("shared/role.md", "include")],
+        "shared/role.md": [],
+    })
+    plan = build_plan(idx)
+    assert plan["schema"] == "dotmd-plan/v1"
+    assert plan["stats"] == {"tasks": 2, "batches": 1, "conflicts": 1, "cycles": 0}
+    assert plan["batches"] == [
+        {"level": 0, "parallelizable": True, "tasks": ["a.md", "b.md"]}
+    ]
+    assert plan["tasks"]["a.md"]["parallel_flag"] is True
+    assert plan["tasks"]["a.md"]["depends_on"] == []
+    assert plan["tasks"]["a.md"]["context"] == [
+        {"path": "shared/role.md", "type": "shared", "title": "shared/role.md"}
+    ]
+    assert plan["conflicts"][0]["shared"] == ["shared/role.md"]
+
+
+def test_build_plan_chain_two_batches():
+    idx = _idx({
+        "SKILL.md": [_d("a.md", "delegate")],
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [],
+    })
+    plan = build_plan(idx)
+    assert [batch["tasks"] for batch in plan["batches"]] == [["b.md"], ["a.md"]]
+    assert plan["tasks"]["a.md"]["depends_on"] == ["b.md"]
+    assert plan["batches"][0]["parallelizable"] is False
+
+
+def test_build_plan_mutual_cycle_excluded_and_reported():
+    idx = _idx({
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [_d("a.md", "delegate")],
+    })
+    plan = build_plan(idx)
+    assert plan["batches"] == []
+    assert plan["stats"]["cycles"] == 1
+    assert any("task cycle" in c for c in plan["cycles"])
+    assert plan["tasks"]["a.md"]["level"] is None
+    assert plan["tasks"]["b.md"]["level"] is None
+
+
+def test_build_plan_no_delegates_warns():
+    idx = _idx({"a.md": [_d("b.md", "include")], "b.md": []})
+    plan = build_plan(idx)
+    assert plan["stats"]["tasks"] == 0
+    assert plan["tasks"] == {}
+    assert "no @delegate directives found" in plan["warnings"]
+
+
+def test_build_plan_missing_target_warns():
+    idx = {
+        "root": "/x",
+        "files": {
+            "SKILL.md": {"type": "skill", "title": "Root",
+                         "deps": [{"to": "gone.md", "type": "delegate", "parallel": False}]},
+            "gone.md": {"type": "agent", "title": "", "missing": True, "deps": []},
+        },
+        "cycles": [],
+        "stats": {"files": 2},
+    }
+    plan = build_plan(idx)
+    assert plan["tasks"]["gone.md"]["context"] == []
+    assert any("gone.md" in w for w in plan["warnings"])
