@@ -214,3 +214,11 @@ def test_format_sarif_shape_and_locations():
             ["artifactLocation"]["uri"] == "gone.md")
     # circular has path "" -> no locations key
     assert "locations" not in by_rule["circular"]
+
+
+def test_checks_api_is_exported():
+    import dotmd_parser
+    for name in ("run_checks", "summarize", "exit_code",
+                 "format_text", "format_json", "format_sarif", "CHECK_SCHEMA"):
+        assert hasattr(dotmd_parser, name), name
+        assert name in dotmd_parser.__all__, name
