@@ -86,8 +86,10 @@ Finding = {
 - `_conflicting_directive_findings`: 各 source ファイルの deps を `to` でグルーピングし、
   `{include, ref, delegate}` のうち distinct type が 2 以上ある target を warning に
   （message に種別一覧）。read-ref は対象外。
-- `_orphan_findings`: `inventory` でルート配下の .md を列挙し、グラフのノード集合（`index["files"]` のキー）に
-  存在しない .md を orphan に。ルートの SKILL.md / エントリは除外。`root` が None のときは空（disk 走査不可）。
+- `_orphan_findings`: ルート配下の .md を列挙し、グラフのノード集合（`index["files"]` のキー）に
+  存在しない .md を orphan に。ルートの SKILL.md / エントリは除外。`root` が None のときは空。
+  `root` がファイルパス（例: SKILL.md）の場合は親ディレクトリに昇格してから走査する
+  （`build_index`/`compact_graph` がファイル入力で親を基準にするのと一致させるため）。
 
 ## 5. CLI（既存 `check` を拡張・後方互換）
 

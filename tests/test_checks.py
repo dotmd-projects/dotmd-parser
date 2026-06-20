@@ -222,3 +222,32 @@ def test_checks_api_is_exported():
                  "format_text", "format_json", "format_sarif", "CHECK_SCHEMA"):
         assert hasattr(dotmd_parser, name), name
         assert name in dotmd_parser.__all__, name
+
+
+def test_run_checks_no_double_count_of_cycles_and_missing():
+    # circular + missing appear in BOTH index["cycles"]/["missing"] AND
+    # index["warnings"]; run_checks must count each exactly once.
+    idx = _idx(
+        files={"a.md": {"type": "agent"}},
+        cycles=["Circular reference: /x/a.md -> /x/a.md"],
+        missing=["gone.md"],
+        warnings=[
+            {"type": "circular", "path": "a.md", "message": "Circular reference: /x/a.md -> /x/a.md"},
+            {"type": "missing", "path": "gone.md", "message": "referenced file does not exist"},
+        ],
+    )
+    findings = run_checks(idx)
+    rules = [f["rule"] for f in findings]
+    assert rules.count("circular") == 1
+    assert rules.count("missing-reference") == 1
+
+
+def test_run_checks_promotes_depth_and_read_error_to_errors():
+    idx = _idx(warnings=[
+        {"type": "depth_exceeded", "path": "deep.md", "message": "max depth 10 exceeded"},
+        {"type": "read_error", "path": "bad.md", "message": "could not read"},
+    ])
+    findings = run_checks(idx)
+    by_rule = {f["rule"]: f for f in findings}
+    assert by_rule["depth-exceeded"]["severity"] == "error"
+    assert by_rule["read-error"]["severity"] == "error"

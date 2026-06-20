@@ -11,7 +11,7 @@ follows [Semantic Versioning](https://semver.org/).
   検出。`--format text|json|sarif`、`--fail-on error|warning|never`、
   `--check orphans`（opt-in の孤立ファイル検出）、`--out FILE` を追加。
   SARIF は GitHub code scanning に upload して PR インライン注釈にできる。
-  既定挙動（cycle/missing で exit 1）は後方互換。`run_checks` ほかを公開 API に追加。
+  既定挙動（cycle/missing で exit 1）は後方互換（depth超過・読込エラーも error 級として exit 1 対象に追加）。`run_checks` ほかを公開 API に追加。
   設計: `docs/superpowers/specs/2026-06-20-guidance-health-check-design.md`
 
 ## [0.7.0] - 2026-05-13
