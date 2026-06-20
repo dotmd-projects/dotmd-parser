@@ -211,3 +211,38 @@ def build_plan(index: dict) -> dict:
         "cycles": cycles,
         "warnings": warnings,
     }
+
+
+def render_ascii(plan: dict) -> str:
+    """Render a plan as a compact human-readable text view."""
+    stats = plan.get("stats", {})
+    lines: list[str] = [
+        f"# dotmd plan — {stats.get('tasks', 0)} tasks, "
+        f"{stats.get('batches', 0)} batches",
+    ]
+    for batch in plan.get("batches", []):
+        marker = " (parallel)" if batch.get("parallelizable") else ""
+        lines.append(f"Level {batch['level']}{marker}:")
+        for task in batch.get("tasks", []):
+            flag = " ‖" if plan["tasks"].get(task, {}).get("parallel_flag") else ""
+            lines.append(f"  - {task}{flag}")
+    conflicts = plan.get("conflicts", [])
+    if conflicts:
+        lines.append("")
+        lines.append("Conflicts (warning — parallel kept):")
+        for c in conflicts:
+            pair = " & ".join(c["between"])
+            lines.append(f"  - L{c['level']}: {pair} share {', '.join(c['shared'])}")
+    cycles = plan.get("cycles", [])
+    if cycles:
+        lines.append("")
+        lines.append("Cycles (error):")
+        for c in cycles:
+            lines.append(f"  - {c}")
+    warnings = plan.get("warnings", [])
+    if warnings:
+        lines.append("")
+        lines.append("Warnings:")
+        for w in warnings:
+            lines.append(f"  - {w}")
+    return "\n".join(lines)

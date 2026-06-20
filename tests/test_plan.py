@@ -274,3 +274,28 @@ def test_build_plan_missing_target_warns():
     plan = build_plan(idx)
     assert plan["tasks"]["gone.md"]["context"] == []
     assert any("gone.md" in w for w in plan["warnings"])
+
+
+from dotmd_parser.plan import render_ascii
+
+
+def test_render_ascii_shows_batches_and_conflicts():
+    idx = _idx({
+        "SKILL.md": [_d("a.md", "delegate", True), _d("b.md", "delegate", True)],
+        "a.md": [_d("shared/role.md", "include")],
+        "b.md": [_d("shared/role.md", "include")],
+        "shared/role.md": [],
+    })
+    text = render_ascii(build_plan(idx))
+    assert "Level 0" in text
+    assert "a.md" in text and "b.md" in text
+    assert "conflict" in text.lower()
+
+
+def test_render_ascii_reports_cycles():
+    idx = _idx({
+        "a.md": [_d("b.md", "delegate")],
+        "b.md": [_d("a.md", "delegate")],
+    })
+    text = render_ascii(build_plan(idx))
+    assert "cycle" in text.lower()
