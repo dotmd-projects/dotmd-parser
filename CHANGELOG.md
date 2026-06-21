@@ -3,6 +3,16 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`dotmd-index --order cache`（キャッシュ親和ソート）** — Files セクションを
+  変更頻度の低い順（git 履歴ベース、非リポは fallback）に並べ、LLM のプレフィックス
+  安定化＝KV キャッシュ無効化抑制を狙う opt-in。既定 `--order alpha` は現状と完全同一。
+  `order` は content_hash に織り込まれ、切替時のみ再生成される。新 `stability <old> <new>`
+  でプレフィックス安定率を計測。`git_change_counts` / `prefix_stability` を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-21-cache-affine-order-design.md`
+
 ## [0.7.0] - 2026-05-13
 
 ### Added

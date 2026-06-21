@@ -268,6 +268,28 @@ dotmd-parser dotmd-index ./docs/ --push-openrag
 **search index** (full-content semantic retrieval). Register OpenRAG's
 MCP server with Claude Code to use both surfaces from the same client.
 
+### Cache-affine order (`--order cache`)
+
+`dotmd-index --order cache` lists the `## Files` section with the
+least-frequently-changed files first (estimated from git history), so the
+generated `dotmd-index.md` keeps a stable prefix across regenerations — better
+KV-cache reuse for LLMs that read it. Default `--order alpha` is unchanged.
+
+```bash
+dotmd-parser dotmd-index ./skill --order cache
+dotmd-parser dotmd-index ./skill --order cache --stdout
+```
+
+Measure the effect with `stability` (compare two generations):
+
+```bash
+dotmd-parser stability old-index.md new-index.md          # prefix stable: 42/50 lines (0.84)
+dotmd-parser stability old-index.md new-index.md --json
+```
+
+Outside a git repo (or for untracked files) frequency is treated as 0, so
+`cache` degrades gracefully to alphabetical order.
+
 ## `analyze` — AI-assisted dependency detection
 
 Use when a folder of markdown has **no explicit directives yet**. `analyze`
