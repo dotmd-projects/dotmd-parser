@@ -95,3 +95,10 @@ def test_scan_delimiter_spoof_skips_frontmatter_line_one():
     text = "---\ntitle: x\n---\n"
     res = scan_content(text, rules=["delimiter-spoof"])
     assert [f["line"] for f in res] == [3]
+
+
+def test_scan_api_is_exported():
+    import dotmd_parser
+    for name in ("scan_content", "DEFAULT_RULES", "OPTIONAL_RULES", "ALL_RULES"):
+        assert hasattr(dotmd_parser, name), name
+        assert name in dotmd_parser.__all__, name
