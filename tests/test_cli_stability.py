@@ -43,6 +43,14 @@ def test_stability_missing_file_exits_2(tmp_path):
     assert e.value.code == 2
 
 
+def test_stability_missing_old_file_exits_2(tmp_path):
+    new = tmp_path / "new.md"
+    new.write_text("a\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        run(["stability", str(tmp_path / "nope.md"), str(new)])
+    assert e.value.code == 2
+
+
 def test_dotmd_index_order_cache_runs(tmp_path, capsys):
     _git(tmp_path, "init")
     (tmp_path / "SKILL.md").write_text("# Root\n", encoding="utf-8")

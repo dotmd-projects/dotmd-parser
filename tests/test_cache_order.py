@@ -61,6 +61,16 @@ def test_prefix_stability_no_common():
     assert res["ratio"] == 0.0
 
 
+def test_git_change_counts_handles_non_ascii_filename(tmp_path):
+    _git(tmp_path, "init")
+    f = tmp_path / "日本語.md"
+    f.write_text("x\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-m", "c1")
+    counts = git_change_counts(tmp_path)
+    assert counts.get("日本語.md") == 1
+
+
 def test_cache_order_api_is_exported():
     import dotmd_parser
     for name in ("git_change_counts", "order_key", "prefix_stability"):

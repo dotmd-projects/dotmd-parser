@@ -20,7 +20,8 @@ def git_change_counts(root: str | Path) -> dict[str, int]:
         return {}
     try:
         result = subprocess.run(
-            ["git", "-C", str(root), "log", "--format=", "--name-only", "--relative", "--", "."],
+            ["git", "-C", str(root), "-c", "core.quotepath=false",
+             "log", "--format=", "--name-only", "--relative", "--", "."],
             capture_output=True,
             text=True,
         )

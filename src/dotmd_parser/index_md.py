@@ -573,6 +573,10 @@ def generate_index_md(
         "openrag". Set by callers that ran an analysis pass first.
     extra_frontmatter : dict | None
         Merged into the top-level frontmatter (e.g. `{"exports": {...}}`).
+    order : str
+        Files-section ordering: "alpha" (default, path-sorted) or "cache"
+        (least-change-frequency first, git-history based). Folded into
+        content_hash only when non-default so switching order triggers a rewrite.
     """
     base = Path(root)
     if not base.exists():
