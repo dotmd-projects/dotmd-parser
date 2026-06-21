@@ -85,3 +85,25 @@ def test_risk_fail_on_medium_vs_any(tmp_path, capsys):
     with pytest.raises(SystemExit) as e_any:
         run(["risk", str(skill), "shared/role.md", "--fail-on", "any"])
     assert e_any.value.code == 1
+
+
+def test_ledger_clear_requires_tag_or_all(tmp_path):
+    skill = _skill(tmp_path)
+    with pytest.raises(SystemExit) as e:
+        run(["ledger", "clear", str(skill), "shared/role.md"])
+    assert e.value.code == 2
+
+
+def test_risk_accepts_skill_md_file_path(tmp_path, capsys):
+    # `risk` documents accepting a SKILL.md path; ledger/frontmatter must
+    # resolve under its parent dir (same root as `ledger add <dir>`).
+    skill = _skill(tmp_path)
+    with pytest.raises(SystemExit):
+        run(["ledger", "add", str(skill), "shared/role.md", "--tag", "fix-failed"])
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        run(["risk", str(skill / "SKILL.md"), "shared/role.md",
+             "--json", "--fail-on", "never"])
+    report = json.loads(capsys.readouterr().out)
+    assert "fix-failed" in report["active_tags"]
+    assert report["level"] == "high"

@@ -262,7 +262,9 @@ def cmd_ledger(args: argparse.Namespace) -> int:
 
 def cmd_risk(args: argparse.Namespace) -> int:
     idx = _load_or_build_index(args.path)
-    report = _risk_report(idx, args.path, args.file)
+    target = Path(args.path)
+    root = target if target.is_dir() else target.parent
+    report = _risk_report(idx, str(root), args.file)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
