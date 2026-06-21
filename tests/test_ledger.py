@@ -152,3 +152,13 @@ def test_risk_report_recent_limit_newest_first(tmp_path):
     report = risk_report({"files": {}, "root": "/x"}, tmp_path, "a.md", recent=3)
     assert len(report["events"]) == 3
     assert [e["ts"] for e in report["events"]] == ["t6", "t5", "t4"]
+
+
+# tests/test_ledger.py — append
+def test_ledger_api_is_exported():
+    import dotmd_parser
+    for name in ("append_event", "active_tags", "all_active_tags", "static_tags",
+                 "risk_report", "risk_level", "RISK_TAGS", "HIGH_TAGS",
+                 "default_ledger_path"):
+        assert hasattr(dotmd_parser, name), name
+        assert name in dotmd_parser.__all__, name
