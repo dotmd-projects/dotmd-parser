@@ -130,6 +130,24 @@ print(result["placeholders"])  # Unresolved {{variable}} names
 print(result["warnings"])      # Circular refs, missing files, etc.
 ```
 
+#### Injection scanning
+
+`resolve` scans content pulled in via `@include` for prompt-injection
+patterns (role spoofing like `System:`, instruction overrides like "ignore
+previous instructions"). Findings print to stderr; the expanded content is
+unchanged by default.
+
+```bash
+dotmd-parser resolve ./skill/SKILL.md                      # scan on, warn (default)
+dotmd-parser resolve ./skill/SKILL.md --no-scan            # disable scanning
+dotmd-parser resolve ./skill/SKILL.md --scan-rule tool-exfil   # add an opt-in rule
+dotmd-parser resolve ./skill/SKILL.md --block              # replace injected includes with a placeholder
+```
+
+The root/entry file is trusted and not scanned — only `@include`-pulled
+files are. Matches inside fenced code blocks are ignored, and
+`<!-- dotmd-allow: role-spoof -->` (or `all`) in a file suppresses that rule.
+
 ### dependents_of — Reverse dependency query
 
 ```python

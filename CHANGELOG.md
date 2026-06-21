@@ -3,6 +3,20 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`resolve` の @include インジェクション検査** — @include で取り込む内容を展開時に
+  スキャンし、ロール詐称（`System:` 等・チャットトークン）と指示上書き
+  （"ignore previous instructions" 等）を既定検出。`delimiter-spoof` /
+  `tool-exfil` は `--scan-rule` で opt-in。既定は warning（inline 継続）、
+  `--block` で該当 include をプレースホルダ置換。コードフェンス内は除外、
+  `<!-- dotmd-allow: <rule> -->` で抑制。root（エントリ）は信頼し非検査。
+  `resolve()` 戻り値に `injections` キーを追加（後方互換）。`scan_content` を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-21-include-injection-scan-design.md`
+
+---
+
 ## [0.7.0] - 2026-05-13
 
 ### Added

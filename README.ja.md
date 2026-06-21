@@ -111,6 +111,23 @@ print(result["placeholders"])  # 未解決の {{変数}} リスト
 print(result["warnings"])      # 循環参照、欠損ファイルなど
 ```
 
+#### インジェクション検査
+
+`resolve` は `@include` で取り込む内容をスキャンし、プロンプトインジェクション
+（`System:` 等のロール詐称、"ignore previous instructions" 等の指示上書き）を
+検出します。検出は stderr に出力され、既定では展開内容は変更されません。
+
+```bash
+dotmd-parser resolve ./skill/SKILL.md                      # scan 有効・warn（既定）
+dotmd-parser resolve ./skill/SKILL.md --no-scan            # スキャン無効化
+dotmd-parser resolve ./skill/SKILL.md --scan-rule tool-exfil   # opt-in ルール追加
+dotmd-parser resolve ./skill/SKILL.md --block              # 検出した include をプレースホルダ置換
+```
+
+root（エントリ）は信頼され検査されず、`@include` 取り込みファイルのみが対象です。
+コードフェンス内の一致は無視され、ファイル内の `<!-- dotmd-allow: role-spoof -->`
+（または `all`）で該当ルールを抑制できます。
+
 ### dependents_of — 逆依存クエリ
 
 ```python
