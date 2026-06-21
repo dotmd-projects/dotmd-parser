@@ -49,15 +49,15 @@ ALL_RULES = DEFAULT_RULES + OPTIONAL_RULES
 _ROLE_LINE_RE = re.compile(r"^\s*(System|Assistant|Human|User|AI)\s*:")
 _CHAT_TOKENS = ("<|im_start|>", "<|im_end|>", "[INST]", "[/INST]", "<<SYS>>", "<</SYS>>")
 _OVERRIDE_RE = re.compile(
-    r"(?i)\b(ignore|disregard|forget)\b.*\b(previous|above|prior|earlier|all)\b"
-    r".*\b(instruction|instructions|prompt|prompts|context|rule|rules)\b"
+    r"(?i)\b(ignore|disregard|forget)\b[^\n]{0,200}?\b(previous|above|prior|earlier|all)\b"
+    r"[^\n]{0,200}?\b(instruction|instructions|prompt|prompts|context|rule|rules)\b"
 )
 _NEW_INSTR_RE = re.compile(r"(?i)\bnew\s+instructions?\s*:")
 _DELIM_DASHES_RE = re.compile(r"^\s*---\s*$")
 _DELIM_HEADING_RE = re.compile(r"(?i)^#{1,6}\s*(system|instructions?|prompt)\b")
 _EXFIL_RE = re.compile(
-    r"(?i)\b(print|reveal|show|repeat|output|display)\b"
-    r".*\b(system prompt|your instructions|the prompt above|previous prompt)\b"
+    r"(?i)\b(print|reveal|show|repeat|output|display)\b[^\n]{0,200}?"
+    r"\b(system prompt|your instructions|the prompt above|previous prompt)\b"
 )
 
 

@@ -492,7 +492,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_resolve.add_argument(
         "--scan-rule", action="append",
         choices=["role-spoof", "instruction-override", "delimiter-spoof", "tool-exfil"],
-        help="Enable an additional scan rule (repeatable; defaults always run unless --no-scan)",
+        help="Add an opt-in scan rule (repeatable); unioned with the default rules unless --no-scan",
     )
     p_resolve.add_argument("--block", action="store_true", help="Replace injected @include content with a placeholder instead of inlining")
     p_resolve.set_defaults(func=cmd_resolve)

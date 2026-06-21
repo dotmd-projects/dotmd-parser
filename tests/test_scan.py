@@ -102,3 +102,15 @@ def test_scan_api_is_exported():
     for name in ("scan_content", "DEFAULT_RULES", "OPTIONAL_RULES", "ALL_RULES"):
         assert hasattr(dotmd_parser, name), name
         assert name in dotmd_parser.__all__, name
+
+
+def test_scan_no_redos_on_long_nonmatching_line():
+    # A long line that partially matches the override/exfil prefixes but never
+    # completes must scan in linear time (no catastrophic backtracking).
+    import time
+    line = "ignore " + "all " * 20000 + "x\n"
+    start = time.perf_counter()
+    res = scan_content(line, rules=list(ALL_RULES))
+    elapsed = time.perf_counter() - start
+    assert elapsed < 1.0, f"scan took {elapsed:.2f}s (possible ReDoS)"
+    # (it may or may not flag; the point is it returns quickly)
