@@ -84,3 +84,21 @@ def read_events(root: str | Path) -> list[dict]:
         except json.JSONDecodeError:
             print(f"warning: skipping malformed ledger line: {line[:80]}", file=sys.stderr)
     return events
+
+
+def active_tags(root: str | Path, file: str) -> set[str]:
+    """Replay ledger events for `file` and return the active risk-tag set."""
+    tags: set[str] = set()
+    for event in read_events(root):
+        if event.get("file") != file:
+            continue
+        action = event.get("action")
+        tag = event.get("tag")
+        if action == "add" and tag in RISK_TAGS:
+            tags.add(tag)
+        elif action == "clear":
+            if tag == "all":
+                tags.clear()
+            else:
+                tags.discard(tag)
+    return tags

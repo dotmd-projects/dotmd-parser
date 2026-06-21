@@ -2,6 +2,7 @@ import json
 import pytest
 from dotmd_parser.ledger import (
     default_ledger_path, append_event, read_events, RISK_TAGS, HIGH_TAGS,
+    active_tags,
 )
 
 
@@ -50,3 +51,29 @@ def test_read_events_skips_malformed_lines(tmp_path):
     )
     events = read_events(tmp_path)
     assert [e["file"] for e in events] == ["a.md", "b.md"]
+
+
+def test_active_tags_add_then_clear(tmp_path):
+    append_event(tmp_path, "a.md", "add", "fix-failed", ts="t1")
+    append_event(tmp_path, "a.md", "add", "fragile", ts="t2")
+    assert active_tags(tmp_path, "a.md") == {"fix-failed", "fragile"}
+    append_event(tmp_path, "a.md", "clear", "fix-failed", ts="t3")
+    assert active_tags(tmp_path, "a.md") == {"fragile"}
+
+
+def test_active_tags_clear_all(tmp_path):
+    append_event(tmp_path, "a.md", "add", "fix-failed", ts="t1")
+    append_event(tmp_path, "a.md", "add", "deprecated", ts="t2")
+    append_event(tmp_path, "a.md", "clear", "all", ts="t3")
+    assert active_tags(tmp_path, "a.md") == set()
+
+
+def test_active_tags_isolated_per_file(tmp_path):
+    append_event(tmp_path, "a.md", "add", "fragile", ts="t1")
+    append_event(tmp_path, "b.md", "add", "deprecated", ts="t2")
+    assert active_tags(tmp_path, "a.md") == {"fragile"}
+    assert active_tags(tmp_path, "b.md") == {"deprecated"}
+
+
+def test_active_tags_empty_when_no_events(tmp_path):
+    assert active_tags(tmp_path, "a.md") == set()
