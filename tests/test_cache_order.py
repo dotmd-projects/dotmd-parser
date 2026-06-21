@@ -1,5 +1,5 @@
 import subprocess
-from dotmd_parser.cache_order import git_change_counts, order_key
+from dotmd_parser.cache_order import git_change_counts, order_key, prefix_stability
 
 
 def _git(d, *args):
@@ -37,3 +37,25 @@ def test_order_key_low_count_first_then_alpha():
     keys = sorted(["hot.md", "cold.md", "warm.md"], key=lambda r: order_key(r, counts))
     # cold.md (0), warm.md (0, alpha after cold), hot.md (5)
     assert keys == ["cold.md", "warm.md", "hot.md"]
+
+
+def test_prefix_stability_identical():
+    text = "a\nb\nc\n"
+    res = prefix_stability(text, text)
+    assert res["common_prefix_lines"] == res["new_lines"]
+    assert res["ratio"] == 1.0
+
+
+def test_prefix_stability_partial():
+    old = "a\nb\nc\nd\n"
+    new = "a\nb\nX\nd\n"
+    res = prefix_stability(old, new)
+    assert res["common_prefix_lines"] == 2  # a, b match; then X != c
+    assert res["new_lines"] == len(new.split("\n"))
+    assert 0.0 < res["ratio"] < 1.0
+
+
+def test_prefix_stability_no_common():
+    res = prefix_stability("x\ny\n", "a\nb\n")
+    assert res["common_prefix_lines"] == 0
+    assert res["ratio"] == 0.0
