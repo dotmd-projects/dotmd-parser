@@ -206,6 +206,29 @@ dotmd-parser digest ./my-skill/            # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
 
+### `ledger` / `risk` — edit-risk governance
+
+Record per-file risk history in an append-only JSONL ledger
+(`.claude/dotmd-ledger.jsonl`) and query it before editing. `risk` combines
+reverse-dependency impact (`affects`) with active risk tags (ledger replay ∪
+frontmatter `risk:`).
+
+```bash
+dotmd-parser ledger add . shared/role.md --tag fix-failed --note "retry hung"
+dotmd-parser ledger clear . shared/role.md --tag fix-failed   # or --all
+dotmd-parser risk . shared/role.md                            # text report
+dotmd-parser risk . shared/role.md --json
+```
+
+Tags: `fix-failed`, `fragile`, `security-sensitive`, `deprecated` (the first
+two are "high"). `--fail-on high|any|never` controls the exit code, so a
+PreToolUse hook can warn before risky edits:
+
+```bash
+dotmd-parser risk . "$FILE_PATH" --fail-on high \
+  || echo "[dotmd] high-risk file (last fix failed / security-sensitive) — review before editing"
+```
+
 ## `dotmd-index.md` — folder overview in a single file
 
 `dotmd-parser dotmd-index <path>` writes `<path>/dotmd-index.md`, a

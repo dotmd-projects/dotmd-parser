@@ -3,6 +3,17 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Memory-as-Governance リスク台帳** — 追記専用 JSONL（`.claude/dotmd-ledger.jsonl`）に
+  per-file リスクタグ（fix-failed / fragile / security-sensitive / deprecated）を記録
+  （`ledger add` / `ledger clear`、replay で状態導出）。`risk <path> <file>` が逆依存
+  （affects）件数と active タグ・レベル（high/medium/none）を返し、`--fail-on high|any|never`
+  で CI / PreToolUse フックのゲートに使える。frontmatter `risk:` の静的タグも統合。
+  `risk_report` 等を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-21-memory-governance-design.md`
+
 ## [0.7.0] - 2026-05-13
 
 ### Added
