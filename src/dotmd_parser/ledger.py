@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotmd_parser.index_md import extract_frontmatter
+from dotmd_parser.digest import affects as _affects
 
 RISK_TAGS = ("fix-failed", "fragile", "security-sensitive", "deprecated")
 HIGH_TAGS = frozenset({"fix-failed", "security-sensitive"})
@@ -138,3 +139,18 @@ def risk_level(tags: set[str]) -> str:
     if tags:
         return "medium"
     return "none"
+
+
+def risk_report(index: dict, root: str | Path, file: str, recent: int = 5) -> dict:
+    """Combine reverse-deps and active risk tags into a report dict."""
+    impacted = _affects(index, file)
+    tags = sorted(all_active_tags(root, file))
+    file_events = [e for e in read_events(root) if e.get("file") == file]
+    return {
+        "file": file,
+        "affects": impacted,
+        "affects_count": len(impacted),
+        "active_tags": tags,
+        "level": risk_level(set(tags)),
+        "events": list(reversed(file_events))[:recent],
+    }

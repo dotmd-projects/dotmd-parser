@@ -2,7 +2,7 @@ import json
 import pytest
 from dotmd_parser.ledger import (
     default_ledger_path, append_event, read_events, RISK_TAGS, HIGH_TAGS,
-    active_tags, static_tags, all_active_tags, risk_level,
+    active_tags, static_tags, all_active_tags, risk_level, risk_report,
 )
 
 
@@ -113,3 +113,42 @@ def test_risk_level():
     assert risk_level({"fragile"}) == "medium"
     assert risk_level({"deprecated"}) == "medium"
     assert risk_level(set()) == "none"
+
+
+def _idx_with_dep():
+    # SKILL.md and agents/a.md both include shared/role.md → role.md affects both
+    return {
+        "root": "/x",
+        "files": {
+            "SKILL.md": {"type": "skill", "deps": [{"to": "shared/role.md", "type": "include"}]},
+            "agents/a.md": {"type": "agent", "deps": [{"to": "shared/role.md", "type": "include"}]},
+            "shared/role.md": {"type": "shared", "deps": []},
+        },
+        "stats": {"files": 3},
+    }
+
+
+def test_risk_report_combines_affects_and_tags(tmp_path):
+    append_event(tmp_path, "shared/role.md", "add", "fix-failed", ts="t1")
+    report = risk_report(_idx_with_dep(), tmp_path, "shared/role.md")
+    assert report["file"] == "shared/role.md"
+    assert sorted(report["affects"]) == ["SKILL.md", "agents/a.md"]
+    assert report["affects_count"] == 2
+    assert report["active_tags"] == ["fix-failed"]
+    assert report["level"] == "high"
+    assert report["events"][0]["tag"] == "fix-failed"
+
+
+def test_risk_report_no_risk(tmp_path):
+    report = risk_report(_idx_with_dep(), tmp_path, "shared/role.md")
+    assert report["active_tags"] == []
+    assert report["level"] == "none"
+    assert report["events"] == []
+
+
+def test_risk_report_recent_limit_newest_first(tmp_path):
+    for i in range(7):
+        append_event(tmp_path, "a.md", "add", "fragile", ts=f"t{i}")
+    report = risk_report({"files": {}, "root": "/x"}, tmp_path, "a.md", recent=3)
+    assert len(report["events"]) == 3
+    assert [e["ts"] for e in report["events"]] == ["t6", "t5", "t4"]
