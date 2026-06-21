@@ -59,3 +59,10 @@ def test_prefix_stability_no_common():
     res = prefix_stability("x\ny\n", "a\nb\n")
     assert res["common_prefix_lines"] == 0
     assert res["ratio"] == 0.0
+
+
+def test_cache_order_api_is_exported():
+    import dotmd_parser
+    for name in ("git_change_counts", "order_key", "prefix_stability"):
+        assert hasattr(dotmd_parser, name), name
+        assert name in dotmd_parser.__all__, name
