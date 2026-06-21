@@ -17,6 +17,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotmd_parser.index_md import extract_frontmatter
+
 RISK_TAGS = ("fix-failed", "fragile", "security-sensitive", "deprecated")
 HIGH_TAGS = frozenset({"fix-failed", "security-sensitive"})
 LEDGER_DIR = ".claude"
@@ -102,3 +104,37 @@ def active_tags(root: str | Path, file: str) -> set[str]:
             else:
                 tags.discard(tag)
     return tags
+
+
+def static_tags(root: str | Path, file: str) -> set[str]:
+    """Read `risk:` from the file's frontmatter; keep only known enum tags."""
+    path = Path(root) / file
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set()
+    fm = extract_frontmatter(text)
+    value = fm.get("risk")
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = [v for v in value if isinstance(v, str)]
+    else:
+        candidates = []
+    return {c for c in candidates if c in RISK_TAGS}
+
+
+def all_active_tags(root: str | Path, file: str) -> set[str]:
+    """Union of ledger-active tags and static frontmatter tags."""
+    return active_tags(root, file) | static_tags(root, file)
+
+
+def risk_level(tags: set[str]) -> str:
+    """Map an active-tag set to a level: high | medium | none."""
+    if tags & HIGH_TAGS:
+        return "high"
+    if tags:
+        return "medium"
+    return "none"
