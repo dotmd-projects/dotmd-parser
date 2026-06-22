@@ -5,6 +5,15 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`analyze` が @include / @ref を自動判定** — 依存ごとに Claude が
+  `kind`（include=共有断片を inline / ref=指すだけのポインタ）を判定し、`apply`
+  時に適切なディレクティブを注入。循環は常に `@ref` へ強制降格（inline 循環を防止）、
+  `--max-include-bytes N` で大きいターゲットを `@ref` に降格（opt-in）。`--plan`
+  経路でも host-agent が `kind` を埋める。`kind` 省略時は `@include`（後方互換）。
+  これにより「ポインタを手動で `@ref` に直す」運用が不要になる。
+  設計: `docs/superpowers/specs/2026-06-22-analyze-include-ref-design.md`
+
 ## [0.9.0] - 2026-06-22
 
 ### Added
