@@ -328,10 +328,15 @@ def is_text_editable(file_path: str) -> bool:
 
 
 def generate_directives(analysis: dict) -> dict[str, list[str]]:
-    """Convert edges + shared proposals into `{src: ["@include target", ...]}`."""
+    """Convert edges + shared proposals into `{src: ["@include|@ref target", ...]}`.
+
+    Each edge's `kind` ("include" | "ref") selects the directive; unknown or
+    missing kind falls back to "include". Shared proposals are always @include.
+    """
     directives: dict[str, list[str]] = {}
     for edge in analysis.get("edges", []):
-        entry = f"@include {edge['to']}"
+        directive = "@ref" if edge.get("kind") == "ref" else "@include"
+        entry = f"{directive} {edge['to']}"
         bucket = directives.setdefault(edge["from"], [])
         if entry not in bucket:
             bucket.append(entry)

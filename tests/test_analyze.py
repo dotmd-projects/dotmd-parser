@@ -252,3 +252,32 @@ class TestBundledPrompt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------------------------------
+# Task 1: generate_directives respects kind
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import generate_directives  # noqa: E402 (already imported above via __init__)
+
+
+def test_generate_directives_respects_kind():
+    analysis = {
+        "edges": [
+            {"from": "a.md", "to": "shared/role.md", "kind": "include", "reason": "x"},
+            {"from": "a.md", "to": "guide.md", "kind": "ref", "reason": "y"},
+            {"from": "b.md", "to": "z.md", "reason": "no kind -> include"},
+        ],
+        "shared_proposals": [
+            {"name": "shared/common.md", "used_by": ["c.md"]},
+        ],
+    }
+    d = generate_directives(analysis)
+    assert d["a.md"] == ["@include shared/role.md", "@ref guide.md"]
+    assert d["b.md"] == ["@include z.md"]          # missing kind -> include
+    assert d["c.md"] == ["@include shared/common.md"]  # shared_proposals always include
+
+
+def test_generate_directives_unknown_kind_is_include():
+    analysis = {"edges": [{"from": "a.md", "to": "b.md", "kind": "weird"}], "shared_proposals": []}
+    assert generate_directives(analysis)["a.md"] == ["@include b.md"]
