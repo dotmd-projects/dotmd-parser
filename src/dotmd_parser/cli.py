@@ -12,6 +12,8 @@ Subcommands
 - `tree    <path> [file]`  ASCII dependency tree.
 - `plan    <path>`         Parallel @delegate execution plan (JSON).
 - `resolve <file>`         Recursively expand `@include` directives.
+- `ledger  <add|clear> ...`  Record risk events (append-only JSONL).
+- `risk    <path> <file>`    Report edit risk (affects + active tags).
 - `analyze <path>`         AI-powered dependency detection (requires Claude API).
 - `show    <path>`         Legacy summary + full graph JSON (default).
 
@@ -58,6 +60,11 @@ from dotmd_parser.index_md import (
     DEFAULT_INDEX_FILENAME,
     generate_index_md as _generate_index_md,
     write_index_md as _write_index_md,
+)
+from dotmd_parser.ledger import (
+    append_event as _append_event,
+    risk_report as _risk_report,
+    RISK_TAGS as _RISK_TAGS,
 )
 from dotmd_parser.checks import (
     run_checks as _run_checks,
@@ -294,6 +301,47 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     return 0
+
+
+def cmd_ledger(args: argparse.Namespace) -> int:
+    if args.ledger_action == "add":
+        _append_event(args.path, args.file, "add", args.tag, note=args.note)
+        print(f"ledger: add {args.tag} -> {args.file}", file=sys.stderr)
+        return 0
+    # clear
+    if not args.all and not args.tag:
+        print("error: ledger clear requires --tag <tag> or --all", file=sys.stderr)
+        return 2
+    tag = "all" if args.all else args.tag
+    _append_event(args.path, args.file, "clear", tag)
+    print(f"ledger: clear {tag} -> {args.file}", file=sys.stderr)
+    return 0
+
+
+def cmd_risk(args: argparse.Namespace) -> int:
+    idx = _load_or_build_index(args.path)
+    target = Path(args.path)
+    root = target if target.is_dir() else target.parent
+    report = _risk_report(idx, str(root), args.file)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        tags = report["active_tags"]
+        if tags:
+            risk_str = f"active risk: {', '.join(tags)} ({report['level']})"
+            last_add = next((e for e in report["events"] if e.get("action") == "add"), None)
+            if last_add:
+                risk_str += f" [last add: {last_add.get('ts', '')}]"
+        else:
+            risk_str = "no active risk"
+        print(f"{report['file']} — affects {report['affects_count']} files; {risk_str}")
+
+    fail_on = args.fail_on
+    if fail_on == "never":
+        return 0
+    if fail_on == "any":
+        return 1 if report["active_tags"] else 0
+    return 1 if report["level"] == "high" else 0   # default: high
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
@@ -557,6 +605,31 @@ def _build_parser() -> argparse.ArgumentParser:
     p_resolve.add_argument("--block", action="store_true", help="Replace injected @include content with a placeholder instead of inlining")
     p_resolve.set_defaults(func=cmd_resolve)
 
+    p_ledger = sub.add_parser("ledger", help="Record risk events (append-only JSONL)")
+    ledger_sub = p_ledger.add_subparsers(dest="ledger_action", required=True)
+
+    p_ledger_add = ledger_sub.add_parser("add", help="Add a risk tag to a file")
+    p_ledger_add.add_argument("path", help="Project root (where .claude/ lives)")
+    p_ledger_add.add_argument("file", help="File path relative to root")
+    p_ledger_add.add_argument("--tag", required=True, choices=list(_RISK_TAGS), help="Risk tag")
+    p_ledger_add.add_argument("--note", help="Optional free-text note")
+    p_ledger_add.set_defaults(func=cmd_ledger)
+
+    p_ledger_clear = ledger_sub.add_parser("clear", help="Clear a risk tag (or all) from a file")
+    p_ledger_clear.add_argument("path", help="Project root (where .claude/ lives)")
+    p_ledger_clear.add_argument("file", help="File path relative to root")
+    p_ledger_clear.add_argument("--tag", choices=list(_RISK_TAGS), help="Risk tag to clear")
+    p_ledger_clear.add_argument("--all", action="store_true", help="Clear all tags for the file")
+    p_ledger_clear.set_defaults(func=cmd_ledger)
+
+    p_risk = sub.add_parser("risk", help="Report edit risk (affects + active tags)")
+    p_risk.add_argument("path", help="Directory or SKILL.md")
+    p_risk.add_argument("file", help="File path relative to root")
+    p_risk.add_argument("--json", action="store_true", help="Emit JSON instead of text")
+    p_risk.add_argument("--fail-on", choices=["high", "any", "never"], default="high",
+                        dest="fail_on", help="Exit-1 threshold (default: high)")
+    p_risk.set_defaults(func=cmd_risk)
+
     p_analyze = sub.add_parser("analyze", help="AI dependency detection (requires Claude API key)")
     p_analyze.add_argument("path", help="Directory to scan")
     p_analyze.add_argument("--apply", action="store_true", help="Inject @include / write deps.yml")
@@ -655,7 +728,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

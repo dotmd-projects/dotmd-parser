@@ -70,6 +70,18 @@ from dotmd_parser.index_md import (
     DEFAULT_INDEX_FILENAME,
     INDEX_MD_SCHEMA,
 )
+from dotmd_parser.ledger import (
+    append_event,
+    read_events,
+    active_tags,
+    static_tags,
+    all_active_tags,
+    risk_level,
+    risk_report,
+    default_ledger_path,
+    RISK_TAGS,
+    HIGH_TAGS,
+)
 from dotmd_parser.checks import (
     run_checks,
     summarize,
@@ -145,6 +157,17 @@ __all__ = [
     "extract_frontmatter",
     "DEFAULT_INDEX_FILENAME",
     "INDEX_MD_SCHEMA",
+    # ledger
+    "append_event",
+    "read_events",
+    "active_tags",
+    "static_tags",
+    "all_active_tags",
+    "risk_level",
+    "risk_report",
+    "default_ledger_path",
+    "RISK_TAGS",
+    "HIGH_TAGS",
     # checks
     "run_checks",
     "summarize",

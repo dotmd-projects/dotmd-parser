@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Memory-as-Governance リスク台帳** — 追記専用 JSONL（`.claude/dotmd-ledger.jsonl`）に
+  per-file リスクタグ（fix-failed / fragile / security-sensitive / deprecated）を記録
+  （`ledger add` / `ledger clear`、replay で状態導出）。`risk <path> <file>` が逆依存
+  （affects）件数と active タグ・レベル（high/medium/none）を返し、`--fail-on high|any|never`
+  で CI / PreToolUse フックのゲートに使える。frontmatter `risk:` の静的タグも統合。
+  `risk_report` 等を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-21-memory-governance-design.md`
 - **`resolve` の @include インジェクション検査** — @include で取り込む内容を展開時に
   スキャンし、ロール詐称（`System:` 等・チャットトークン）と指示上書き
   （"ignore previous instructions" 等）を既定検出。`delimiter-spoof` /
