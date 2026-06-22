@@ -202,11 +202,12 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser dotmd-index <path> --push-openrag` | After writing, ingest into OpenRAG (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
 | `dotmd-parser index <path> --scope <subdir>` | Incrementally re-index one subfolder, merge into the existing index |
-| `dotmd-parser check <path>` | Exit non-zero on cycles / missing refs (CI-friendly) |
+| `dotmd-parser check <path>` | Health gate (CI): cycles, missing refs, unresolved placeholders, conflicts |
 | `dotmd-parser affects <path> <file>` | Reverse dependencies of `<file>` |
 | `dotmd-parser deps <path> <file>` | Direct dependencies of `<file>` |
 | `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
 | `dotmd-parser tree <path>` | ASCII dependency tree |
+| `dotmd-parser plan <path>` | Parallel delegation plan (JSON) |
 | `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
 | `dotmd-parser analyze <path>` | AI dependency detection (requires `ANTHROPIC_API_KEY`) |
 | `dotmd-parser analyze <path> --dry-run` | **API-free**: estimate tokens and USD cost |
@@ -223,6 +224,48 @@ dotmd-parser index ./my-skill/             # one-off; cached until files change
 dotmd-parser digest ./my-skill/            # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
+
+### `check` — guidance health gate (CI)
+
+Deterministic health check over the dependency graph. Detects cycles and
+missing references (errors), plus unresolved `{{placeholders}}` and
+conflicting directives (warnings). Optionally flags orphan files.
+
+```bash
+dotmd-parser check ./my-skill                       # text, fails on errors
+dotmd-parser check ./my-skill --fail-on warning     # also fail on warnings
+dotmd-parser check ./my-skill --format json
+dotmd-parser check ./my-skill --format sarif --out dotmd.sarif
+dotmd-parser check ./my-skill --check orphans       # opt-in orphan detection
+```
+
+`--fail-on` chooses the exit-code threshold (`error` default, `warning`, or
+`never`). Use `--format sarif` with GitHub's `upload-sarif` action to get
+inline PR annotations:
+
+```yaml
+- run: dotmd-parser check . --format sarif --out dotmd.sarif --fail-on never
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: dotmd.sarif }
+- run: dotmd-parser check . --fail-on warning   # gate the PR
+```
+### `plan` — parallel delegation plan
+
+Generate a static execution plan from the `@delegate` graph: topological
+batches (parallel levels), per-task subtree context, plus conflict and cycle
+pre-detection. Intended for a parent agent that fans out subagents.
+
+```bash
+dotmd-parser plan ./my-skill            # plan(JSON) to stdout
+dotmd-parser plan ./my-skill --ascii    # human-readable view
+dotmd-parser plan ./my-skill --out plan.json
+dotmd-parser plan ./my-skill --strict   # exit 1 on cycles/conflicts (CI)
+```
+
+Each task in the JSON carries a `context` array (the subtree files to hand the
+subagent). Same-batch shared dependencies are reported in `conflicts[]` as
+warnings — the batch stays parallel. Mutual `@delegate` references are reported
+in `cycles[]` and excluded from batches.
 
 ## `dotmd-index.md` — folder overview in a single file
 
