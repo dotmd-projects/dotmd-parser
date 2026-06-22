@@ -8,6 +8,12 @@ Analyze the documents listed below and detect dependencies between them.
 - A document that defines shared concepts or terminology is a dependency of documents that use them.
 - Dependencies flow from higher-level concepts (policy, design) down to lower-level concepts (implementation, procedure).
 - If multiple documents reference the same rule or definition, propose a shared part (`shared/...`).
+- Set `kind` to `"include"` when the depended-on file is a shared fragment whose
+  text should be inlined into the depending file (shared role, definitions,
+  boilerplate blocks).
+- Set `kind` to `"ref"` when it is only a pointer that should NOT be inlined: a
+  see-also link, a standalone or large document, a conditional/optional guide,
+  or a sub-skill.
 
 Propose common elements that should be extracted as shared parts when appropriate.
 
@@ -27,6 +33,7 @@ Write the `reason` field in the **same language as the source documents** (e.g. 
     {
       "from": "relative path of the depending file",
       "to": "relative path of the depended-on file",
+      "kind": "include or ref",
       "reason": "one-sentence justification, matching the source language"
     }
   ],
