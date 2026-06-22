@@ -360,7 +360,7 @@ def _reaches(adj: dict[str, set[str]], src: str, dst: str) -> bool:
         node = stack.pop()
         if node == dst:
             return True
-        for nxt in adj.get(node, ()):  # type: ignore[arg-type]
+        for nxt in adj.get(node, ()):
             if nxt not in seen:
                 seen.add(nxt)
                 stack.append(nxt)

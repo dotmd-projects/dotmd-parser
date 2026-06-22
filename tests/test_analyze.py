@@ -374,6 +374,23 @@ def test_apply_cycle_demotes_one_side(tmp_path):
     assert (tmp_path / "b.md").read_text(encoding="utf-8").startswith("@ref a.md")
 
 
+def test_apply_demotes_cycle_against_existing_include(tmp_path):
+    # a.md already includes b.md on disk; a NEW edge b.md -> a.md would close
+    # the cycle, so it must be demoted to @ref.
+    # Use SKILL.md so build_index can discover the existing include edge.
+    (tmp_path / "SKILL.md").write_text("# Root\n@include a.md\n", encoding="utf-8")
+    (tmp_path / "a.md").write_text("@include b.md\n\n# A\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+
+    analysis = {"edges": [{"from": "b.md", "to": "a.md", "kind": "include"}],
+                "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    body = (tmp_path / "b.md").read_text(encoding="utf-8")
+    assert body.startswith("@ref a.md")          # demoted, not @include
+    # a.md's existing directive is untouched
+    assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("@include b.md")
+
+
 # ---------------------------------------------------------------------------
 # Task 4: surface kind in host-agent plan + proposal output
 # ---------------------------------------------------------------------------
