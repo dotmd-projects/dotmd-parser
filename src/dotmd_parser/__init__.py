@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 from dotmd_parser.parser import (
     build_graph,
@@ -80,6 +80,10 @@ from dotmd_parser.checks import (
     CHECK_SCHEMA,
 )
 from dotmd_parser.openrag import push_to_openrag
+from dotmd_parser.plan import (
+    build_plan,
+    render_ascii,
+)
 
 __all__ = [
     "__version__",
@@ -145,4 +149,7 @@ __all__ = [
     "CHECK_SCHEMA",
     # openrag
     "push_to_openrag",
+    # plan
+    "build_plan",
+    "render_ascii",
 ]

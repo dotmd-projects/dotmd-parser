@@ -168,6 +168,7 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser deps <path> <file>` | `<file>` の直接依存先 |
 | `dotmd-parser digest <path>` | LLM向けのトークン効率的な要約 |
 | `dotmd-parser tree <path>` | ASCIIの依存ツリー |
+| `dotmd-parser plan <path>` | 並列委譲プラン (JSON) |
 | `dotmd-parser resolve <file> [--var k=v]` | `@include` を再帰的に展開 |
 | `dotmd-parser analyze <path>` | AI依存検出 (`ANTHROPIC_API_KEY` 必須) |
 | `dotmd-parser analyze <path> --dry-run` | **API不要**: トークン数・USDコスト見積もり |
@@ -208,6 +209,22 @@ dotmd-parser check ./my-skill --check orphans       # 孤立ファイル検出(o
   with: { sarif_file: dotmd.sarif }
 - run: dotmd-parser check . --fail-on warning   # PR をゲート
 ```
+### `plan` — 並列委譲プラン
+
+`@delegate` グラフから実行プランを静的生成します。topological バッチ
+（並列レベル）、各タスクの subtree context、競合・循環の事前検出を含み、
+サブエージェントを fan-out する親エージェントが消費する想定です。
+
+```bash
+dotmd-parser plan ./my-skill            # plan(JSON) を stdout へ
+dotmd-parser plan ./my-skill --ascii    # 人間可読ビュー
+dotmd-parser plan ./my-skill --out plan.json
+dotmd-parser plan ./my-skill --strict   # 循環/競合で exit 1 (CI)
+```
+
+各タスクは `context`（サブエージェントに渡す subtree ファイル）を持ちます。
+同一バッチ内の共有依存は `conflicts[]` に警告として記録され、バッチは並列の
+まま維持されます。相互 `@delegate` は `cycles[]` に記録しバッチから除外します。
 
 ### `dotmd-index.md` (フォルダ概要を 1 ファイルで)
 

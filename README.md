@@ -189,6 +189,7 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser deps <path> <file>` | Direct dependencies of `<file>` |
 | `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
 | `dotmd-parser tree <path>` | ASCII dependency tree |
+| `dotmd-parser plan <path>` | Parallel delegation plan (JSON) |
 | `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
 | `dotmd-parser analyze <path>` | AI dependency detection (requires `ANTHROPIC_API_KEY`) |
 | `dotmd-parser analyze <path> --dry-run` | **API-free**: estimate tokens and USD cost |
@@ -230,6 +231,23 @@ inline PR annotations:
   with: { sarif_file: dotmd.sarif }
 - run: dotmd-parser check . --fail-on warning   # gate the PR
 ```
+### `plan` — parallel delegation plan
+
+Generate a static execution plan from the `@delegate` graph: topological
+batches (parallel levels), per-task subtree context, plus conflict and cycle
+pre-detection. Intended for a parent agent that fans out subagents.
+
+```bash
+dotmd-parser plan ./my-skill            # plan(JSON) to stdout
+dotmd-parser plan ./my-skill --ascii    # human-readable view
+dotmd-parser plan ./my-skill --out plan.json
+dotmd-parser plan ./my-skill --strict   # exit 1 on cycles/conflicts (CI)
+```
+
+Each task in the JSON carries a `context` array (the subtree files to hand the
+subagent). Same-batch shared dependencies are reported in `conflicts[]` as
+warnings — the batch stays parallel. Mutual `@delegate` references are reported
+in `cycles[]` and excluded from batches.
 
 ## `dotmd-index.md` — folder overview in a single file
 
