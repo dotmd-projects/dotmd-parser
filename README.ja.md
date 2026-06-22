@@ -349,6 +349,53 @@ dotmd-parser analyze ./docs/ --plan > plan.md
 dotmd-parser analyze ./docs/ --apply-from analysis.json
 ```
 
+### 実例: ディレクティブ無しスキルの移行
+
+実在のスキル（ここでは Claude Code プラグインからコピーした 1 つ）が、別ファイルを
+本文中で参照しているだけだと、`dotmd-parser` はまだ依存グラフを認識できません:
+
+```bash
+$ dotmd-parser digest ./brainstorming
+# dotmd index — 1 files
+Health: OK
+## Files
+- [skill] SKILL.md — Brainstorming Ideas Into Designs   # 0 edges
+```
+
+API キー不要のプランを取得し、host agent（Claude Code 等、または自分）が
+`analysis.json` を記入します:
+
+```bash
+dotmd-parser analyze ./brainstorming --plan > plan.md
+# Claude Code が plan.md を読んで依存を推定し analysis.json を出力。例:
+#   {"edges": [{"from": "SKILL.md", "to": "visual-companion.md",
+#               "reason": "SKILL.md が visual-companion.md を読むよう指示している"}]}
+
+dotmd-parser analyze ./brainstorming --apply-from analysis.json
+#   Injected @include into 1 file(s): SKILL.md
+```
+
+これで同じフォルダが一級の依存グラフになります:
+
+```bash
+$ dotmd-parser digest ./brainstorming
+# dotmd index — 2 files
+Edges: 1 (include:1)
+## Files
+- [skill] SKILL.md  deps: include→visual-companion.md
+
+$ dotmd-parser affects ./brainstorming visual-companion.md
+SKILL.md                                   # 影響範囲が照会可能に
+
+$ dotmd-parser check ./brainstorming       # exit 0 — CI ゲート可能
+```
+
+移行は**スキル単位**（`SKILL.md` をエントリに持つフォルダ）で行います。`analyze` は
+各ソースファイルからの相対パスで `@include` を注入するため、同一ディレクトリ内の
+参照はきれいに解決します。独立スキルの寄せ集め（単一の root が無い）は、各スキルを
+個別に取り込むか、トップに index `SKILL.md` を足してください。インライン展開したくない
+参照は、注入された `@include` を `@ref` に直すと実運用上きれいです。
+
 ## 開発
 
 ```bash
