@@ -649,13 +649,18 @@ def format_host_agent_plan(
         "```json",
         "{",
         '  "documents": [{"path": "...", "summary": "..."}],',
-        '  "edges": [{"from": "...", "to": "...", "reason": "..."}],',
+        '  "edges": [{"from": "...", "to": "...",',
+        '             "kind": "include|ref", "reason": "..."}],',
         '  "shared_proposals": [',
         '    {"name": "shared/...", "content_summary": "...",',
         '     "used_by": ["..."], "reason": "..."}',
         "  ]",
         "}",
         "```",
+        "",
+        "Set `kind` per edge: \"include\" when the target is a shared fragment to "
+        "inline here; \"ref\" when it is only a pointer (see-also / standalone / "
+        "large / sub-skill).",
         "",
         "## Apply the result",
         "",
@@ -713,9 +718,10 @@ def format_proposal(analysis: dict) -> str:
     if analysis["edges"]:
         lines.append("--- Detected dependencies ---")
         for edge in analysis["edges"]:
+            kind = edge.get("kind", "include")
             lines += [
                 f"  {edge['from']}",
-                f"    └── depends on: {edge['to']}",
+                f"    └── depends on: {edge['to']}  [{kind}]",
                 f"        reason: {edge.get('reason', '')}",
             ]
         lines.append("")

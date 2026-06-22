@@ -372,3 +372,43 @@ def test_apply_cycle_demotes_one_side(tmp_path):
     apply_analysis(tmp_path, analysis)
     assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("@include b.md")
     assert (tmp_path / "b.md").read_text(encoding="utf-8").startswith("@ref a.md")
+
+
+# ---------------------------------------------------------------------------
+# Task 4: surface kind in host-agent plan + proposal output
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import format_host_agent_plan, format_proposal  # noqa: E402
+
+
+def test_host_agent_plan_mentions_kind(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n", encoding="utf-8")
+    plan = format_host_agent_plan(tmp_path)
+    assert '"kind"' in plan
+    assert "include" in plan and "ref" in plan
+
+
+def test_format_proposal_shows_kind():
+    analysis = {
+        "documents": [{"path": "a.md", "summary": "s"}],
+        "edges": [{"from": "a.md", "to": "guide.md", "kind": "ref", "reason": "pointer"}],
+        "shared_proposals": [],
+    }
+    text = format_proposal(analysis)
+    assert "ref" in text
+    assert "guide.md" in text
+
+
+# ---------------------------------------------------------------------------
+# Task 5: prompt template requests kind
+# ---------------------------------------------------------------------------
+
+def test_prompt_template_requests_kind():
+    from importlib import resources
+    text = (
+        resources.files("dotmd_parser.templates.prompts")
+        .joinpath("analyze-dependencies.md")
+        .read_text(encoding="utf-8")
+    )
+    assert '"kind"' in text
+    assert "include" in text and "ref" in text
