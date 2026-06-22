@@ -352,6 +352,76 @@ def generate_directives(analysis: dict) -> dict[str, list[str]]:
     return directives
 
 
+def _reaches(adj: dict[str, set[str]], src: str, dst: str) -> bool:
+    """Return True if `dst` is reachable from `src` in adjacency `adj`."""
+    seen: set[str] = set()
+    stack = [src]
+    while stack:
+        node = stack.pop()
+        if node == dst:
+            return True
+        for nxt in adj.get(node, ()):  # type: ignore[arg-type]
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return False
+
+
+def _existing_include_adjacency(directory: str | Path) -> dict[str, set[str]]:
+    """Adjacency of include edges already present in `directory` (via build_index)."""
+    from dotmd_parser.index import build_index  # local import avoids cycle at import time
+
+    idx = build_index(str(directory))
+    adj: dict[str, set[str]] = {}
+    for rel, entry in idx.get("files", {}).items():
+        for dep in entry.get("deps", []):
+            if dep.get("type") == "include":
+                adj.setdefault(rel, set()).add(dep["to"])
+    return adj
+
+
+def _apply_directive_guards(
+    analysis: dict,
+    directory: str | Path,
+    max_include_bytes: int | None = None,
+) -> dict:
+    """Return a new analysis with edge `kind` normalized and demoted to ref per guards."""
+    edges = [dict(e) for e in analysis.get("edges", [])]
+    for edge in edges:
+        if edge.get("kind") not in ("include", "ref"):
+            edge["kind"] = "include"
+
+    # size guard (opt-in)
+    if max_include_bytes is not None:
+        base = Path(directory).resolve()
+        for edge in edges:
+            if edge["kind"] != "include":
+                continue
+            target = base / edge["to"]
+            try:
+                if target.is_file() and target.stat().st_size > max_include_bytes:
+                    edge["kind"] = "ref"
+            except OSError:
+                pass
+
+    # cycle guard (hard): only include edges can inline/recurse
+    adj = _existing_include_adjacency(directory)
+    new_includes = sorted(
+        (e for e in edges if e["kind"] == "include"),
+        key=lambda e: (e["from"], e["to"]),
+    )
+    for edge in new_includes:
+        src, dst = edge["from"], edge["to"]
+        if src == dst or _reaches(adj, dst, src):
+            edge["kind"] = "ref"  # adding src->dst would close a cycle
+        else:
+            adj.setdefault(src, set()).add(dst)
+
+    out = dict(analysis)
+    out["edges"] = edges
+    return out
+
+
 def apply_directives(directory: str | Path, directives: dict[str, list[str]]) -> list[str]:
     """Prepend new @include lines to text files. Returns list of modified files."""
     root = Path(directory).resolve()

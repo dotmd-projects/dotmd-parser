@@ -281,3 +281,56 @@ def test_generate_directives_respects_kind():
 def test_generate_directives_unknown_kind_is_include():
     analysis = {"edges": [{"from": "a.md", "to": "b.md", "kind": "weird"}], "shared_proposals": []}
     assert generate_directives(analysis)["a.md"] == ["@include b.md"]
+
+
+# ---------------------------------------------------------------------------
+# Task 2: _apply_directive_guards — cycle (hard) + size (opt-in)
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import _apply_directive_guards  # noqa: E402
+
+
+def _kinds(analysis):
+    return {(e["from"], e["to"]): e["kind"] for e in analysis["edges"]}
+
+
+def test_guard_normalizes_unknown_kind(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "b.md", "kind": "bogus"}], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    assert _kinds(out)[("a.md", "b.md")] == "include"
+
+
+def test_guard_demotes_cycle_to_ref(tmp_path):
+    # a->b and b->a both include; one must be demoted so inlining can't cycle.
+    a = {"edges": [
+        {"from": "a.md", "to": "b.md", "kind": "include"},
+        {"from": "b.md", "to": "a.md", "kind": "include"},
+    ], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    k = _kinds(out)
+    # deterministic: (a.md,b.md) added first stays include; (b.md,a.md) closes cycle -> ref
+    assert k[("a.md", "b.md")] == "include"
+    assert k[("b.md", "a.md")] == "ref"
+
+
+def test_guard_demotes_self_edge(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "a.md", "kind": "include"}], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    assert _kinds(out)[("a.md", "a.md")] == "ref"
+
+
+def test_guard_size_optin(tmp_path):
+    big = tmp_path / "big.md"
+    big.write_text("x" * 500, encoding="utf-8")
+    a = {"edges": [{"from": "a.md", "to": "big.md", "kind": "include"}], "shared_proposals": []}
+    # without the cap: stays include
+    assert _kinds(_apply_directive_guards(a, tmp_path))[("a.md", "big.md")] == "include"
+    # with a small cap: demoted to ref
+    out = _apply_directive_guards(a, tmp_path, max_include_bytes=100)
+    assert _kinds(out)[("a.md", "big.md")] == "ref"
+
+
+def test_guard_does_not_mutate_input(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "a.md", "kind": "include"}], "shared_proposals": []}
+    _apply_directive_guards(a, tmp_path)
+    assert a["edges"][0]["kind"] == "include"  # original untouched
