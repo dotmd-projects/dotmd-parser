@@ -5,6 +5,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-22
+
 ### Added
 - **`analyze` が @include / @ref を自動判定** — 依存ごとに Claude が
   `kind`（include=共有断片を inline / ref=指すだけのポインタ）を判定し、`apply`
