@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from dotmd_parser import __version__
+from dotmd_parser.cache_order import git_change_counts, order_key
 from dotmd_parser.digest import tree as _dep_tree
 from dotmd_parser.index import build_index
 from dotmd_parser.inventory import (
@@ -281,18 +282,21 @@ def _walk_files(root: Path):
         yield rel.as_posix(), size
 
 
-def _compute_content_hash(root: Path, idx: dict) -> str:
+def _compute_content_hash(root: Path, idx: dict, order: str = "alpha") -> str:
     """Stable hash over (rel_path, size, file_content_hash) tuples.
 
     Excludes timestamps and absolute paths so re-runs match when content
     is unchanged. Skips the index.md itself so writing the artifact never
-    invalidates its own hash.
+    invalidates its own hash. The body `order` is folded in (only for
+    non-default order) so switching order triggers a rewrite.
     """
     h = hashlib.sha256()
     files_idx = idx.get("files", {})
     for rel_str, size in _walk_files(root):
         content_h = files_idx.get(rel_str, {}).get("hash", "")
         h.update(f"{rel_str}|{size}|{content_h}".encode("utf-8"))
+    if order != "alpha":
+        h.update(f"|order={order}".encode("utf-8"))
     return f"{HASH_PREFIX}{h.hexdigest()[:HASH_LENGTH]}"
 
 
@@ -364,7 +368,14 @@ def _folder_map_section(root: Path, max_depth: int = 3) -> str:
     return "\n".join(lines)
 
 
-def _files_section(root: Path, inv: dict, idx: dict, max_files: int) -> str:
+def _files_section(
+    root: Path,
+    inv: dict,
+    idx: dict,
+    max_files: int,
+    order: str = "alpha",
+    counts: dict | None = None,
+) -> str:
     lines = ["## Files", ""]
     files_idx = idx.get("files", {})
     md_entries: list[tuple[str, dict]] = []
@@ -376,6 +387,11 @@ def _files_section(root: Path, inv: dict, idx: dict, max_files: int) -> str:
             md_entries.append((rel, files_idx.get(rel, {})))
         else:
             other_entries.append((rel, size))
+
+    if order == "cache":
+        ck = counts or {}
+        md_entries.sort(key=lambda e: order_key(e[0], ck))
+        other_entries.sort(key=lambda e: order_key(e[0], ck))
 
     total_listed = 0
     omitted = 0
@@ -530,6 +546,7 @@ def generate_index_md(
     aggregate: bool = False,
     analysis_backend: str = "none",
     extra_frontmatter: dict | None = None,
+    order: str = "alpha",
 ) -> str:
     """Return a Markdown string (frontmatter + body) summarizing `root`.
 
@@ -556,6 +573,10 @@ def generate_index_md(
         "openrag". Set by callers that ran an analysis pass first.
     extra_frontmatter : dict | None
         Merged into the top-level frontmatter (e.g. `{"exports": {...}}`).
+    order : str
+        Files-section ordering: "alpha" (default, path-sorted) or "cache"
+        (least-change-frequency first, git-history based). Folded into
+        content_hash only when non-default so switching order triggers a rewrite.
     """
     base = Path(root)
     if not base.exists():
@@ -567,7 +588,8 @@ def generate_index_md(
     inv = inventory(str(base))
     idx = build_index(str(base))
 
-    content_hash = _compute_content_hash(base, idx)
+    counts = git_change_counts(base) if order == "cache" else {}
+    content_hash = _compute_content_hash(base, idx, order)
 
     chunks: list[dict] = []
     body_parts: list[str] = []
@@ -594,7 +616,7 @@ def generate_index_md(
 
     body_parts.append("")
     body_parts.append("<!-- chunk:files -->")
-    files_text = _files_section(base, inv, idx, max_files=max_files)
+    files_text = _files_section(base, inv, idx, max_files=max_files, order=order, counts=counts)
     body_parts.append(files_text)
     chunks.append({"id": "files", "anchor": "#files", "tokens_est": _approx_tokens(files_text)})
 

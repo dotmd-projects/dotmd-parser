@@ -313,6 +313,28 @@ dotmd-parser dotmd-index ./docs/ --push-openrag
 `dotmd-index.md` (フォルダの「地図」) と OpenRAG (全文検索インデックス) は相補的に機能します。
 OpenRAG の MCP サーバーを Claude Code に登録すれば、同じコンテンツが検索ツールとしても利用可能です。
 
+### キャッシュ親和ソート（`--order cache`）
+
+`dotmd-index --order cache` は `## Files` セクションを変更頻度の低い順
+（git 履歴から推定）に並べ、再生成しても `dotmd-index.md` のプレフィックスが
+安定するようにします（読み手 LLM の KV キャッシュ再利用に有利）。既定の
+`--order alpha` は従来どおりです。
+
+```bash
+dotmd-parser dotmd-index ./skill --order cache
+dotmd-parser dotmd-index ./skill --order cache --stdout
+```
+
+効果は `stability`（2 世代を比較）で計測できます:
+
+```bash
+dotmd-parser stability old-index.md new-index.md          # prefix stable: 42/50 lines (0.84)
+dotmd-parser stability old-index.md new-index.md --json
+```
+
+git リポジトリ外（または未追跡ファイル）では頻度 0 として扱われ、`cache` は
+アルファベット順に穏当に縮退します。
+
 ### API キーなしのワークフロー
 
 ```bash

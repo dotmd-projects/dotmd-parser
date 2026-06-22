@@ -70,6 +70,11 @@ from dotmd_parser.index_md import (
     DEFAULT_INDEX_FILENAME,
     INDEX_MD_SCHEMA,
 )
+from dotmd_parser.cache_order import (
+    git_change_counts,
+    order_key,
+    prefix_stability,
+)
 from dotmd_parser.ledger import (
     append_event,
     read_events,
@@ -157,6 +162,10 @@ __all__ = [
     "extract_frontmatter",
     "DEFAULT_INDEX_FILENAME",
     "INDEX_MD_SCHEMA",
+    # cache_order
+    "git_change_counts",
+    "order_key",
+    "prefix_stability",
     # ledger
     "append_event",
     "read_events",
