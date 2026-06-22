@@ -10,6 +10,7 @@ Subcommands
 - `deps    <path> <file>`  Direct dependencies of `<file>`.
 - `digest  <path>`         Token-efficient text summary for Claude context.
 - `tree    <path> [file]`  ASCII dependency tree.
+- `plan    <path>`         Parallel @delegate execution plan (JSON).
 - `resolve <file>`         Recursively expand `@include` directives.
 - `analyze <path>`         AI-powered dependency detection (requires Claude API).
 - `show    <path>`         Legacy summary + full graph JSON (default).
@@ -58,6 +59,7 @@ from dotmd_parser.index_md import (
     generate_index_md as _generate_index_md,
     write_index_md as _write_index_md,
 )
+from dotmd_parser.plan import build_plan as _build_plan, render_ascii as _render_ascii
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -219,6 +221,28 @@ def cmd_digest(args: argparse.Namespace) -> int:
 def cmd_tree(args: argparse.Namespace) -> int:
     idx = _load_or_build_index(args.path, use_cache=not args.no_cache)
     print(_tree(idx, root_rel=args.root, max_depth=args.max_depth))
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    idx = _load_or_build_index(args.path, use_cache=not args.no_cache)
+    plan = _build_plan(idx)
+
+    if args.ascii:
+        print(_render_ascii(plan))
+
+    payload = json.dumps(plan, ensure_ascii=False, indent=2)
+    if args.out:
+        Path(args.out).write_text(payload + "\n", encoding="utf-8")
+    elif (not args.ascii) or args.json:
+        print(payload)
+
+    if idx.get("stats", {}).get("files", 0) == 0:
+        _maybe_warn_empty(args.path)
+
+    stats = plan.get("stats", {})
+    if args.strict and (stats.get("cycles") or stats.get("conflicts")):
+        return 1
     return 0
 
 
@@ -464,6 +488,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tree.add_argument("--no-cache", action="store_true")
     p_tree.set_defaults(func=cmd_tree)
 
+    p_plan = sub.add_parser("plan", help="Generate a parallel @delegate execution plan (JSON)")
+    p_plan.add_argument("path", help="Directory or SKILL.md")
+    p_plan.add_argument("--json", action="store_true", help="Emit JSON to stdout (default behavior)")
+    p_plan.add_argument("--ascii", action="store_true", help="Print a human-readable ASCII plan view")
+    p_plan.add_argument("--out", help="Write JSON to a file instead of stdout")
+    p_plan.add_argument("--no-cache", action="store_true", help="Force rebuild instead of using saved index")
+    p_plan.add_argument("--strict", action="store_true", help="Exit 1 when cycles or conflicts are present")
+    p_plan.set_defaults(func=cmd_plan)
+
     p_resolve = sub.add_parser("resolve", help="Expand @include directives")
     p_resolve.add_argument("file", help="Entry .md file")
     p_resolve.add_argument("--var", action="append", help="key=value placeholder substitution (repeatable)")
@@ -567,7 +600,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:
