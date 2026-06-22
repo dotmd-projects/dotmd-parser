@@ -111,6 +111,23 @@ print(result["placeholders"])  # 未解決の {{変数}} リスト
 print(result["warnings"])      # 循環参照、欠損ファイルなど
 ```
 
+#### インジェクション検査
+
+`resolve` は `@include` で取り込む内容をスキャンし、プロンプトインジェクション
+（`System:` 等のロール詐称、"ignore previous instructions" 等の指示上書き）を
+検出します。検出は stderr に出力され、既定では展開内容は変更されません。
+
+```bash
+dotmd-parser resolve ./skill/SKILL.md                      # scan 有効・warn（既定）
+dotmd-parser resolve ./skill/SKILL.md --no-scan            # スキャン無効化
+dotmd-parser resolve ./skill/SKILL.md --scan-rule tool-exfil   # opt-in ルール追加
+dotmd-parser resolve ./skill/SKILL.md --block              # 検出した include をプレースホルダ置換
+```
+
+root（エントリ）は信頼され検査されず、`@include` 取り込みファイルのみが対象です。
+コードフェンス内の一致は無視され、ファイル内の `<!-- dotmd-allow: role-spoof -->`
+（または `all`）で該当ルールを抑制できます。
+
 ### dependents_of — 逆依存クエリ
 
 ```python
@@ -163,11 +180,12 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser dotmd-index <path> --push-openrag` | 生成後に OpenRAG に取り込み (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | `.claude/dotmd-index.json` をビルド・保存 |
 | `dotmd-parser index <path> --scope <subdir>` | サブディレクトリのみ増分インデックス (既存とマージ) |
-| `dotmd-parser check <path>` | 循環依存・欠損参照があれば非ゼロ終了 (CI向け) |
+| `dotmd-parser check <path>` | 健全性ゲート (CI): 循環・欠損・未解決 placeholder・矛盾 directive |
 | `dotmd-parser affects <path> <file>` | `<file>` に依存しているファイル一覧 |
 | `dotmd-parser deps <path> <file>` | `<file>` の直接依存先 |
 | `dotmd-parser digest <path>` | LLM向けのトークン効率的な要約 |
 | `dotmd-parser tree <path>` | ASCIIの依存ツリー |
+| `dotmd-parser plan <path>` | 並列委譲プラン (JSON) |
 | `dotmd-parser resolve <file> [--var k=v]` | `@include` を再帰的に展開 |
 | `dotmd-parser analyze <path>` | AI依存検出 (`ANTHROPIC_API_KEY` 必須) |
 | `dotmd-parser analyze <path> --dry-run` | **API不要**: トークン数・USDコスト見積もり |
@@ -205,6 +223,46 @@ dotmd-parser risk . shared/role.md --json
 dotmd-parser risk . "$FILE_PATH" --fail-on high \
   || echo "[dotmd] 高リスクファイル（前回修正失敗 / security-sensitive）。編集前に確認を。"
 ```
+
+### `check` — ガイダンス健全性ゲート (CI)
+
+依存グラフの決定的な健全性チェック。循環・欠落参照（error）に加え、未解決の
+`{{placeholder}}` と矛盾 directive（warning）を検出します。孤立ファイルは opt-in。
+
+```bash
+dotmd-parser check ./my-skill                       # text、error で失敗
+dotmd-parser check ./my-skill --fail-on warning     # warning でも失敗
+dotmd-parser check ./my-skill --format json
+dotmd-parser check ./my-skill --format sarif --out dotmd.sarif
+dotmd-parser check ./my-skill --check orphans       # 孤立ファイル検出(opt-in)
+```
+
+`--fail-on` で終了コードの閾値を選びます（既定 `error` / `warning` / `never`）。
+`--format sarif` を GitHub の `upload-sarif` アクションと組み合わせると PR に
+インライン注釈が付きます:
+
+```yaml
+- run: dotmd-parser check . --format sarif --out dotmd.sarif --fail-on never
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: dotmd.sarif }
+- run: dotmd-parser check . --fail-on warning   # PR をゲート
+```
+### `plan` — 並列委譲プラン
+
+`@delegate` グラフから実行プランを静的生成します。topological バッチ
+（並列レベル）、各タスクの subtree context、競合・循環の事前検出を含み、
+サブエージェントを fan-out する親エージェントが消費する想定です。
+
+```bash
+dotmd-parser plan ./my-skill            # plan(JSON) を stdout へ
+dotmd-parser plan ./my-skill --ascii    # 人間可読ビュー
+dotmd-parser plan ./my-skill --out plan.json
+dotmd-parser plan ./my-skill --strict   # 循環/競合で exit 1 (CI)
+```
+
+各タスクは `context`（サブエージェントに渡す subtree ファイル）を持ちます。
+同一バッチ内の共有依存は `conflicts[]` に警告として記録され、バッチは並列の
+まま維持されます。相互 `@delegate` は `cycles[]` に記録しバッチから除外します。
 
 ### `dotmd-index.md` (フォルダ概要を 1 ファイルで)
 

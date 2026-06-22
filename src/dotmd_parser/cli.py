@@ -10,6 +10,7 @@ Subcommands
 - `deps    <path> <file>`  Direct dependencies of `<file>`.
 - `digest  <path>`         Token-efficient text summary for Claude context.
 - `tree    <path> [file]`  ASCII dependency tree.
+- `plan    <path>`         Parallel @delegate execution plan (JSON).
 - `resolve <file>`         Recursively expand `@include` directives.
 - `ledger  <add|clear> ...`  Record risk events (append-only JSONL).
 - `risk    <path> <file>`    Report edit risk (affects + active tags).
@@ -65,6 +66,14 @@ from dotmd_parser.ledger import (
     risk_report as _risk_report,
     RISK_TAGS as _RISK_TAGS,
 )
+from dotmd_parser.checks import (
+    run_checks as _run_checks,
+    format_text as _format_check_text,
+    format_json as _format_check_json,
+    format_sarif as _format_check_sarif,
+    exit_code as _check_exit_code,
+)
+from dotmd_parser.plan import build_plan as _build_plan, render_ascii as _render_ascii
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -188,16 +197,22 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     idx = build_index(args.path)
-    stats = idx["stats"]
-    print(
-        f"{stats['files']} files, {stats['edges']} edges — "
-        f"cycles:{stats['cycles']} missing:{stats['missing']}"
-    )
-    for cycle in idx.get("cycles", []):
-        print(f"  CYCLE   {cycle}")
-    for miss in idx.get("missing", []):
-        print(f"  MISSING {miss}")
-    return 1 if (stats["cycles"] or stats["missing"]) else 0
+    enable_orphans = bool(args.check and "orphans" in args.check)
+    findings = _run_checks(idx, root=args.path, enable_orphans=enable_orphans)
+
+    if args.format == "json":
+        report = _format_check_json(findings, idx)
+    elif args.format == "sarif":
+        report = _format_check_sarif(findings, idx)
+    else:
+        report = _format_check_text(findings, idx)
+
+    if args.out:
+        Path(args.out).write_text(report + "\n", encoding="utf-8")
+    else:
+        print(report)
+
+    return _check_exit_code(findings, args.fail_on)
 
 
 def cmd_affects(args: argparse.Namespace) -> int:
@@ -229,6 +244,28 @@ def cmd_tree(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_plan(args: argparse.Namespace) -> int:
+    idx = _load_or_build_index(args.path, use_cache=not args.no_cache)
+    plan = _build_plan(idx)
+
+    if args.ascii:
+        print(_render_ascii(plan))
+
+    payload = json.dumps(plan, ensure_ascii=False, indent=2)
+    if args.out:
+        Path(args.out).write_text(payload + "\n", encoding="utf-8")
+    elif (not args.ascii) or args.json:
+        print(payload)
+
+    if idx.get("stats", {}).get("files", 0) == 0:
+        _maybe_warn_empty(args.path)
+
+    stats = plan.get("stats", {})
+    if args.strict and (stats.get("cycles") or stats.get("conflicts")):
+        return 1
+    return 0
+
+
 def cmd_resolve(args: argparse.Namespace) -> int:
     variables = {}
     if args.var:
@@ -238,10 +275,31 @@ def cmd_resolve(args: argparse.Namespace) -> int:
                 continue
             k, v = kv.split("=", 1)
             variables[k] = v
-    result = resolve(args.file, variables=variables or None)
+
+    from dotmd_parser.scan import DEFAULT_RULES  # local import keeps top tidy
+    scan_rules = None
+    if args.scan_rule:
+        merged = list(DEFAULT_RULES)
+        for r in args.scan_rule:
+            if r not in merged:
+                merged.append(r)
+        scan_rules = merged
+
+    result = resolve(
+        args.file,
+        variables=variables or None,
+        scan=not args.no_scan,
+        scan_rules=scan_rules,
+        on_injection="block" if args.block else "warn",
+    )
     print(result["content"])
     for w in result["warnings"]:
         print(f"[{w['type'].upper()}] {w['message']}", file=sys.stderr)
+    for f in result.get("injections", []):
+        print(
+            f"[INJECTION {f['rule']}] {f['source']}:{f['line']} — {f['message']}",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -484,8 +542,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_index.set_defaults(func=cmd_index)
 
-    p_check = sub.add_parser("check", help="Fail on cycles or missing references")
+    p_check = sub.add_parser("check", help="Health-check the graph (CI gate)")
     p_check.add_argument("path", help="Directory or SKILL.md")
+    p_check.add_argument(
+        "--format", choices=["text", "json", "sarif"], default="text",
+        help="Report format (default: text)",
+    )
+    p_check.add_argument(
+        "--fail-on", choices=["error", "warning", "never"], default="error",
+        dest="fail_on",
+        help="Exit non-zero threshold (default: error)",
+    )
+    p_check.add_argument(
+        "--check", action="append", choices=["orphans"],
+        help="Enable an optional check (repeatable; e.g. --check orphans)",
+    )
+    p_check.add_argument("--out", help="Write the report to FILE instead of stdout")
     p_check.set_defaults(func=cmd_check)
 
     p_affects = sub.add_parser("affects", help="List files transitively depending on <file>")
@@ -512,9 +584,25 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tree.add_argument("--no-cache", action="store_true")
     p_tree.set_defaults(func=cmd_tree)
 
+    p_plan = sub.add_parser("plan", help="Generate a parallel @delegate execution plan (JSON)")
+    p_plan.add_argument("path", help="Directory or SKILL.md")
+    p_plan.add_argument("--json", action="store_true", help="Emit JSON to stdout (default behavior)")
+    p_plan.add_argument("--ascii", action="store_true", help="Print a human-readable ASCII plan view")
+    p_plan.add_argument("--out", help="Write JSON to a file instead of stdout")
+    p_plan.add_argument("--no-cache", action="store_true", help="Force rebuild instead of using saved index")
+    p_plan.add_argument("--strict", action="store_true", help="Exit 1 when cycles or conflicts are present")
+    p_plan.set_defaults(func=cmd_plan)
+
     p_resolve = sub.add_parser("resolve", help="Expand @include directives")
     p_resolve.add_argument("file", help="Entry .md file")
     p_resolve.add_argument("--var", action="append", help="key=value placeholder substitution (repeatable)")
+    p_resolve.add_argument("--no-scan", action="store_true", help="Disable injection scanning of @included content")
+    p_resolve.add_argument(
+        "--scan-rule", action="append",
+        choices=["role-spoof", "instruction-override", "delimiter-spoof", "tool-exfil"],
+        help="Add an opt-in scan rule (repeatable); unioned with the default rules unless --no-scan",
+    )
+    p_resolve.add_argument("--block", action="store_true", help="Replace injected @include content with a placeholder instead of inlining")
     p_resolve.set_defaults(func=cmd_resolve)
 
     p_ledger = sub.add_parser("ledger", help="Record risk events (append-only JSONL)")
@@ -640,7 +728,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "ledger", "risk"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:
