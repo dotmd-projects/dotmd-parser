@@ -446,20 +446,21 @@ def apply_directives(directory: str | Path, directives: dict[str, list[str]]) ->
     return modified
 
 
-def apply_analysis(directory: str | Path, analysis: dict) -> dict:
+def apply_analysis(directory: str | Path, analysis: dict, max_include_bytes: int | None = None) -> dict:
     """
-    Apply the analysis result: inject `@include` into text files, write
-    `deps.yml` for binary (pdf/docx) sources.
+    Apply the analysis: inject `@include`/`@ref` into text files (per each edge's
+    `kind`, after cycle/size guards), write `deps.yml` for binary sources.
     """
-    directives = generate_directives(analysis)
+    guarded = _apply_directive_guards(analysis, directory, max_include_bytes=max_include_bytes)
+    directives = generate_directives(guarded)
     modified = apply_directives(directory, directives)
 
     binary_deps: dict[str, list[str]] = {
-        src: [d.removeprefix("@include ") for d in entries]
+        src: [d.split(" ", 1)[1] for d in entries]
         for src, entries in directives.items()
         if not is_text_editable(src)
     }
-    deps_yml_path = save_deps_yml(directory, binary_deps, analysis) if binary_deps else None
+    deps_yml_path = save_deps_yml(directory, binary_deps, guarded) if binary_deps else None
 
     return {"modified_files": modified, "deps_yml": deps_yml_path}
 
@@ -671,7 +672,11 @@ def format_host_agent_plan(
     return "\n".join(plan_lines)
 
 
-def apply_analysis_from_file(directory: str | Path, json_path: str | Path) -> dict:
+def apply_analysis_from_file(
+    directory: str | Path,
+    json_path: str | Path,
+    max_include_bytes: int | None = None,
+) -> dict:
     """Load a pre-computed analysis JSON and apply it.
 
     Raises:
@@ -686,11 +691,10 @@ def apply_analysis_from_file(directory: str | Path, json_path: str | Path) -> di
     except json.JSONDecodeError as e:
         raise ValueError(f"invalid JSON in {json_path}: {e}") from e
 
-    # Normalize: accept minimal payloads (edges/shared_proposals only).
     analysis.setdefault("documents", [])
     analysis.setdefault("edges", [])
     analysis.setdefault("shared_proposals", [])
-    return apply_analysis(directory, analysis)
+    return apply_analysis(directory, analysis, max_include_bytes=max_include_bytes)
 
 
 # ---------------------------------------------------------------------------

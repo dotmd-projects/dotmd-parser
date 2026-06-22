@@ -334,3 +334,41 @@ def test_guard_does_not_mutate_input(tmp_path):
     a = {"edges": [{"from": "a.md", "to": "a.md", "kind": "include"}], "shared_proposals": []}
     _apply_directive_guards(a, tmp_path)
     assert a["edges"][0]["kind"] == "include"  # original untouched
+
+
+# ---------------------------------------------------------------------------
+# Task 3: apply_analysis / apply_analysis_from_file wire guards
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import apply_analysis  # noqa: E402
+
+
+def test_apply_injects_ref_for_ref_kind(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    analysis = {"edges": [{"from": "SKILL.md", "to": "guide.md", "kind": "ref"}],
+                "shared_proposals": []}
+    result = apply_analysis(tmp_path, analysis)
+    assert "SKILL.md" in result["modified_files"]
+    body = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
+    assert body.startswith("@ref guide.md")
+
+
+def test_apply_kindless_is_include_backward_compat(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "x.md").write_text("# X\n", encoding="utf-8")
+    analysis = {"edges": [{"from": "SKILL.md", "to": "x.md"}], "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    assert (tmp_path / "SKILL.md").read_text(encoding="utf-8").startswith("@include x.md")
+
+
+def test_apply_cycle_demotes_one_side(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+    analysis = {"edges": [
+        {"from": "a.md", "to": "b.md", "kind": "include"},
+        {"from": "b.md", "to": "a.md", "kind": "include"},
+    ], "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("@include b.md")
+    assert (tmp_path / "b.md").read_text(encoding="utf-8").startswith("@ref a.md")
