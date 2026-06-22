@@ -367,7 +367,9 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     # --apply-from <json>: skip the API call and apply a pre-computed result.
     if args.apply_from:
         try:
-            result = _apply_analysis_from_file(args.path, args.apply_from)
+            result = _apply_analysis_from_file(
+                args.path, args.apply_from, max_include_bytes=args.max_include_bytes
+            )
         except FileNotFoundError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
@@ -375,7 +377,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 1
         if result["modified_files"]:
-            print(f"Injected @include into {len(result['modified_files'])} file(s):")
+            print(f"Injected directives into {len(result['modified_files'])} file(s):")
             for f in result["modified_files"]:
                 print(f"  {f}")
         if result["deps_yml"]:
@@ -407,9 +409,9 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         print(_format_proposal(analysis))
 
     if args.apply:
-        result = _apply_analysis(args.path, analysis)
+        result = _apply_analysis(args.path, analysis, max_include_bytes=args.max_include_bytes)
         if result["modified_files"]:
-            print(f"\nInjected @include into {len(result['modified_files'])} file(s):")
+            print(f"\nInjected directives into {len(result['modified_files'])} file(s):")
             for f in result["modified_files"]:
                 print(f"  {f}")
         if result["deps_yml"]:
@@ -670,6 +672,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Estimate token count and USD cost without calling the API",
+    )
+    p_analyze.add_argument(
+        "--max-include-bytes",
+        type=int,
+        default=None,
+        dest="max_include_bytes",
+        help="Demote @include to @ref when the target file exceeds N bytes (default: off)",
     )
     p_analyze.set_defaults(func=cmd_analyze)
 

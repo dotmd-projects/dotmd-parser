@@ -252,3 +252,181 @@ class TestBundledPrompt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------------------------------
+# Task 1: generate_directives respects kind
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import generate_directives  # noqa: E402 (already imported above via __init__)
+
+
+def test_generate_directives_respects_kind():
+    analysis = {
+        "edges": [
+            {"from": "a.md", "to": "shared/role.md", "kind": "include", "reason": "x"},
+            {"from": "a.md", "to": "guide.md", "kind": "ref", "reason": "y"},
+            {"from": "b.md", "to": "z.md", "reason": "no kind -> include"},
+        ],
+        "shared_proposals": [
+            {"name": "shared/common.md", "used_by": ["c.md"]},
+        ],
+    }
+    d = generate_directives(analysis)
+    assert d["a.md"] == ["@include shared/role.md", "@ref guide.md"]
+    assert d["b.md"] == ["@include z.md"]          # missing kind -> include
+    assert d["c.md"] == ["@include shared/common.md"]  # shared_proposals always include
+
+
+def test_generate_directives_unknown_kind_is_include():
+    analysis = {"edges": [{"from": "a.md", "to": "b.md", "kind": "weird"}], "shared_proposals": []}
+    assert generate_directives(analysis)["a.md"] == ["@include b.md"]
+
+
+# ---------------------------------------------------------------------------
+# Task 2: _apply_directive_guards — cycle (hard) + size (opt-in)
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import _apply_directive_guards  # noqa: E402
+
+
+def _kinds(analysis):
+    return {(e["from"], e["to"]): e["kind"] for e in analysis["edges"]}
+
+
+def test_guard_normalizes_unknown_kind(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "b.md", "kind": "bogus"}], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    assert _kinds(out)[("a.md", "b.md")] == "include"
+
+
+def test_guard_demotes_cycle_to_ref(tmp_path):
+    # a->b and b->a both include; one must be demoted so inlining can't cycle.
+    a = {"edges": [
+        {"from": "a.md", "to": "b.md", "kind": "include"},
+        {"from": "b.md", "to": "a.md", "kind": "include"},
+    ], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    k = _kinds(out)
+    # deterministic: (a.md,b.md) added first stays include; (b.md,a.md) closes cycle -> ref
+    assert k[("a.md", "b.md")] == "include"
+    assert k[("b.md", "a.md")] == "ref"
+
+
+def test_guard_demotes_self_edge(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "a.md", "kind": "include"}], "shared_proposals": []}
+    out = _apply_directive_guards(a, tmp_path)
+    assert _kinds(out)[("a.md", "a.md")] == "ref"
+
+
+def test_guard_size_optin(tmp_path):
+    big = tmp_path / "big.md"
+    big.write_text("x" * 500, encoding="utf-8")
+    a = {"edges": [{"from": "a.md", "to": "big.md", "kind": "include"}], "shared_proposals": []}
+    # without the cap: stays include
+    assert _kinds(_apply_directive_guards(a, tmp_path))[("a.md", "big.md")] == "include"
+    # with a small cap: demoted to ref
+    out = _apply_directive_guards(a, tmp_path, max_include_bytes=100)
+    assert _kinds(out)[("a.md", "big.md")] == "ref"
+
+
+def test_guard_does_not_mutate_input(tmp_path):
+    a = {"edges": [{"from": "a.md", "to": "a.md", "kind": "include"}], "shared_proposals": []}
+    _apply_directive_guards(a, tmp_path)
+    assert a["edges"][0]["kind"] == "include"  # original untouched
+
+
+# ---------------------------------------------------------------------------
+# Task 3: apply_analysis / apply_analysis_from_file wire guards
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import apply_analysis  # noqa: E402
+
+
+def test_apply_injects_ref_for_ref_kind(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    analysis = {"edges": [{"from": "SKILL.md", "to": "guide.md", "kind": "ref"}],
+                "shared_proposals": []}
+    result = apply_analysis(tmp_path, analysis)
+    assert "SKILL.md" in result["modified_files"]
+    body = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
+    assert body.startswith("@ref guide.md")
+
+
+def test_apply_kindless_is_include_backward_compat(tmp_path):
+    (tmp_path / "SKILL.md").write_text("# Root\n", encoding="utf-8")
+    (tmp_path / "x.md").write_text("# X\n", encoding="utf-8")
+    analysis = {"edges": [{"from": "SKILL.md", "to": "x.md"}], "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    assert (tmp_path / "SKILL.md").read_text(encoding="utf-8").startswith("@include x.md")
+
+
+def test_apply_cycle_demotes_one_side(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+    analysis = {"edges": [
+        {"from": "a.md", "to": "b.md", "kind": "include"},
+        {"from": "b.md", "to": "a.md", "kind": "include"},
+    ], "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("@include b.md")
+    assert (tmp_path / "b.md").read_text(encoding="utf-8").startswith("@ref a.md")
+
+
+def test_apply_demotes_cycle_against_existing_include(tmp_path):
+    # a.md already includes b.md on disk; a NEW edge b.md -> a.md would close
+    # the cycle, so it must be demoted to @ref.
+    # Use SKILL.md so build_index can discover the existing include edge.
+    (tmp_path / "SKILL.md").write_text("# Root\n@include a.md\n", encoding="utf-8")
+    (tmp_path / "a.md").write_text("@include b.md\n\n# A\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+
+    analysis = {"edges": [{"from": "b.md", "to": "a.md", "kind": "include"}],
+                "shared_proposals": []}
+    apply_analysis(tmp_path, analysis)
+    body = (tmp_path / "b.md").read_text(encoding="utf-8")
+    assert body.startswith("@ref a.md")          # demoted, not @include
+    # a.md's existing directive is untouched
+    assert (tmp_path / "a.md").read_text(encoding="utf-8").startswith("@include b.md")
+
+
+# ---------------------------------------------------------------------------
+# Task 4: surface kind in host-agent plan + proposal output
+# ---------------------------------------------------------------------------
+
+from dotmd_parser.analyze import format_host_agent_plan  # noqa: E402
+
+
+def test_host_agent_plan_mentions_kind(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n", encoding="utf-8")
+    plan = format_host_agent_plan(tmp_path)
+    assert '"kind"' in plan
+    assert "include" in plan and "ref" in plan
+
+
+def test_format_proposal_shows_kind():
+    analysis = {
+        "documents": [{"path": "a.md", "summary": "s"}],
+        "edges": [{"from": "a.md", "to": "guide.md", "kind": "ref", "reason": "pointer"}],
+        "shared_proposals": [],
+    }
+    text = format_proposal(analysis)
+    assert "ref" in text
+    assert "guide.md" in text
+    assert "[ref]" in text
+
+
+# ---------------------------------------------------------------------------
+# Task 5: prompt template requests kind
+# ---------------------------------------------------------------------------
+
+def test_prompt_template_requests_kind():
+    from importlib import resources
+    text = (
+        resources.files("dotmd_parser.templates.prompts")
+        .joinpath("analyze-dependencies.md")
+        .read_text(encoding="utf-8")
+    )
+    assert '"kind"' in text
+    assert "include" in text and "ref" in text

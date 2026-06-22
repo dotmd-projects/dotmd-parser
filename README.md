@@ -453,8 +453,11 @@ $ dotmd-parser check ./brainstorming       # exit 0 — health-gateable
 Scope it **per skill** (a folder with a `SKILL.md` entry): `analyze` injects
 `@include` paths relative to each source file, so same-directory references
 resolve cleanly. A flat collection of independent skills has no single root —
-onboard each skill, or add a top-level index `SKILL.md`. Tidy any reference
-that should not be inlined by changing its injected `@include` to `@ref`.
+onboard each skill, or add a top-level index `SKILL.md`. `analyze` now classifies each dependency automatically — Claude marks pointers
+as `kind: "ref"` (injected as `@ref`, not inlined) and shared fragments as
+`@include`; cycles are always forced to `@ref`, and `--max-include-bytes N`
+demotes oversized targets. So the manual `@include`→`@ref` cleanup is no longer
+required (you can still override by editing a line).
 
 The bundled prompt lives at
 `src/dotmd_parser/templates/prompts/analyze-dependencies.md` and is shipped
