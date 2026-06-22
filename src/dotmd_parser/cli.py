@@ -268,10 +268,31 @@ def cmd_resolve(args: argparse.Namespace) -> int:
                 continue
             k, v = kv.split("=", 1)
             variables[k] = v
-    result = resolve(args.file, variables=variables or None)
+
+    from dotmd_parser.scan import DEFAULT_RULES  # local import keeps top tidy
+    scan_rules = None
+    if args.scan_rule:
+        merged = list(DEFAULT_RULES)
+        for r in args.scan_rule:
+            if r not in merged:
+                merged.append(r)
+        scan_rules = merged
+
+    result = resolve(
+        args.file,
+        variables=variables or None,
+        scan=not args.no_scan,
+        scan_rules=scan_rules,
+        on_injection="block" if args.block else "warn",
+    )
     print(result["content"])
     for w in result["warnings"]:
         print(f"[{w['type'].upper()}] {w['message']}", file=sys.stderr)
+    for f in result.get("injections", []):
+        print(
+            f"[INJECTION {f['rule']}] {f['source']}:{f['line']} — {f['message']}",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -527,6 +548,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_resolve = sub.add_parser("resolve", help="Expand @include directives")
     p_resolve.add_argument("file", help="Entry .md file")
     p_resolve.add_argument("--var", action="append", help="key=value placeholder substitution (repeatable)")
+    p_resolve.add_argument("--no-scan", action="store_true", help="Disable injection scanning of @included content")
+    p_resolve.add_argument(
+        "--scan-rule", action="append",
+        choices=["role-spoof", "instruction-override", "delimiter-spoof", "tool-exfil"],
+        help="Add an opt-in scan rule (repeatable); unioned with the default rules unless --no-scan",
+    )
+    p_resolve.add_argument("--block", action="store_true", help="Replace injected @include content with a placeholder instead of inlining")
     p_resolve.set_defaults(func=cmd_resolve)
 
     p_analyze = sub.add_parser("analyze", help="AI dependency detection (requires Claude API key)")

@@ -5,6 +5,16 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`resolve` の @include インジェクション検査** — @include で取り込む内容を展開時に
+  スキャンし、ロール詐称（`System:` 等・チャットトークン）と指示上書き
+  （"ignore previous instructions" 等）を既定検出。`delimiter-spoof` /
+  `tool-exfil` は `--scan-rule` で opt-in。既定は warning（inline 継続）、
+  `--block` で該当 include をプレースホルダ置換。コードフェンス内は除外、
+  `<!-- dotmd-allow: <rule> -->` で抑制。root（エントリ）は信頼し非検査。
+  `resolve()` 戻り値に `injections` キーを追加（後方互換）。`scan_content` を公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-21-include-injection-scan-design.md`
+
 ### Changed
 - **`check` を CI ゲートに拡張** — 循環/欠落参照に加え、未解決 placeholder・
   矛盾 directive（同一ターゲットへ include/ref/delegate のうち 2 種以上）を
@@ -13,6 +23,7 @@ follows [Semantic Versioning](https://semver.org/).
   SARIF は GitHub code scanning に upload して PR インライン注釈にできる。
   既定挙動（cycle/missing で exit 1）は後方互換（depth超過・読込エラーも error 級として exit 1 対象に追加）。`run_checks` ほかを公開 API に追加。
   設計: `docs/superpowers/specs/2026-06-20-guidance-health-check-design.md`
+
 ## [0.8.0] - 2026-06-20
 
 ### Added

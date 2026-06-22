@@ -80,6 +80,12 @@ from dotmd_parser.checks import (
     CHECK_SCHEMA,
 )
 from dotmd_parser.openrag import push_to_openrag
+from dotmd_parser.scan import (
+    scan_content,
+    DEFAULT_RULES,
+    OPTIONAL_RULES,
+    ALL_RULES,
+)
 from dotmd_parser.plan import (
     build_plan,
     render_ascii,
@@ -149,6 +155,11 @@ __all__ = [
     "CHECK_SCHEMA",
     # openrag
     "push_to_openrag",
+    # scan
+    "scan_content",
+    "DEFAULT_RULES",
+    "OPTIONAL_RULES",
+    "ALL_RULES",
     # plan
     "build_plan",
     "render_ascii",
