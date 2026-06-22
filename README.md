@@ -409,6 +409,53 @@ dotmd-parser analyze ./docs/ --apply-from analysis.json
 - Re-run with `--apply` over time as the repo grows — existing directives
   are preserved.
 
+### Worked example: migrating a directive-less skill
+
+A real skill (here, one copied out of a Claude Code plugin) references another
+file only in prose, so `dotmd-parser` sees no dependency graph yet:
+
+```bash
+$ dotmd-parser digest ./brainstorming
+# dotmd index — 1 files
+Health: OK
+## Files
+- [skill] SKILL.md — Brainstorming Ideas Into Designs   # 0 edges
+```
+
+Get the no-API-key plan, then act as (or hand it to) the host agent to write
+`analysis.json`:
+
+```bash
+dotmd-parser analyze ./brainstorming --plan > plan.md
+# Claude Code reads plan.md, infers deps, and writes analysis.json, e.g.:
+#   {"edges": [{"from": "SKILL.md", "to": "visual-companion.md",
+#               "reason": "SKILL.md tells the reader to open visual-companion.md"}]}
+
+dotmd-parser analyze ./brainstorming --apply-from analysis.json
+#   Injected @include into 1 file(s): SKILL.md
+```
+
+Now the same folder is a first-class dependency graph:
+
+```bash
+$ dotmd-parser digest ./brainstorming
+# dotmd index — 2 files
+Edges: 1 (include:1)
+## Files
+- [skill] SKILL.md  deps: include→visual-companion.md
+
+$ dotmd-parser affects ./brainstorming visual-companion.md
+SKILL.md                                   # impact is now queryable
+
+$ dotmd-parser check ./brainstorming       # exit 0 — health-gateable
+```
+
+Scope it **per skill** (a folder with a `SKILL.md` entry): `analyze` injects
+`@include` paths relative to each source file, so same-directory references
+resolve cleanly. A flat collection of independent skills has no single root —
+onboard each skill, or add a top-level index `SKILL.md`. Tidy any reference
+that should not be inlined by changing its injected `@include` to `@ref`.
+
 The bundled prompt lives at
 `src/dotmd_parser/templates/prompts/analyze-dependencies.md` and is shipped
 inside the wheel; no network access is needed except for the Claude API
