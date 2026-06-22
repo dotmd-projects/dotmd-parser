@@ -378,7 +378,7 @@ def test_apply_cycle_demotes_one_side(tmp_path):
 # Task 4: surface kind in host-agent plan + proposal output
 # ---------------------------------------------------------------------------
 
-from dotmd_parser.analyze import format_host_agent_plan, format_proposal  # noqa: E402
+from dotmd_parser.analyze import format_host_agent_plan  # noqa: E402
 
 
 def test_host_agent_plan_mentions_kind(tmp_path):
@@ -397,6 +397,7 @@ def test_format_proposal_shows_kind():
     text = format_proposal(analysis)
     assert "ref" in text
     assert "guide.md" in text
+    assert "[ref]" in text
 
 
 # ---------------------------------------------------------------------------

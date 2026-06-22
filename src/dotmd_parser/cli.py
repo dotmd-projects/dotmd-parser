@@ -377,7 +377,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 1
         if result["modified_files"]:
-            print(f"Injected @include into {len(result['modified_files'])} file(s):")
+            print(f"Injected directives into {len(result['modified_files'])} file(s):")
             for f in result["modified_files"]:
                 print(f"  {f}")
         if result["deps_yml"]:
@@ -411,7 +411,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     if args.apply:
         result = _apply_analysis(args.path, analysis, max_include_bytes=args.max_include_bytes)
         if result["modified_files"]:
-            print(f"\nInjected @include into {len(result['modified_files'])} file(s):")
+            print(f"\nInjected directives into {len(result['modified_files'])} file(s):")
             for f in result["modified_files"]:
                 print(f"  {f}")
         if result["deps_yml"]:
