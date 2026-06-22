@@ -509,24 +509,28 @@ def build_graph(root_path: str, type_map: list[tuple[str, str]] | None = None) -
 # resolve() — @include expansion
 # ============================================================
 
-def resolve(file_path: str, variables: dict[str, str] | None = None) -> dict:
+def resolve(
+    file_path: str,
+    variables: dict[str, str] | None = None,
+    *,
+    scan: bool = True,
+    scan_rules: list[str] | None = None,
+    on_injection: str = "warn",
+) -> dict:
     """
     Recursively expand @include directives and generate final text.
     @delegate and @ref lines are left as-is (not expanded).
 
-    Args:
-        file_path: Path to the starting .md file.
-        variables: Dictionary to replace {{key}} placeholders. If None, placeholders are left as-is.
-
-    Returns:
-        {
-          "content":      Final expanded text,
-          "placeholders": List of unresolved placeholder names remaining after expansion,
-          "warnings":     List of warnings encountered during processing
-        }
+    Scans @include-pulled content (depth > 0) for injection patterns when
+    `scan` is True. Findings are returned under the "injections" key. With
+    `on_injection="block"`, a flagged file's expansion is replaced by a
+    placeholder comment instead of being inlined.
     """
+    from dotmd_parser.scan import scan_content  # local import avoids import cycle
+
     root = Path(file_path).resolve()
     warnings = []
+    injections: list[dict] = []
     visited_stack = []
 
     def _expand(fp: Path, depth: int) -> str:
@@ -549,6 +553,15 @@ def resolve(file_path: str, variables: dict[str, str] | None = None) -> dict:
         except Exception as e:
             warnings.append({"type": "read_error", "path": rel, "message": str(e)})
             return ""
+
+        # Scan @include-pulled content only (root is depth 0 and trusted).
+        if scan and depth > 0:
+            found = scan_content(content, source=rel, rules=scan_rules)
+            if found:
+                injections.extend(found)
+                if on_injection == "block":
+                    rule_names = ", ".join(sorted({f["rule"] for f in found}))
+                    return f"<!-- dotmd: blocked injection ({rule_names}) from {rel} -->"
 
         visited_stack.append(rel)
 
@@ -580,6 +593,7 @@ def resolve(file_path: str, variables: dict[str, str] | None = None) -> dict:
         "content": expanded,
         "placeholders": remaining,
         "warnings": warnings,
+        "injections": injections,
     }
 
 

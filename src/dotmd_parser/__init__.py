@@ -10,7 +10,7 @@ API:
     from dotmd_parser import digest, tree, affects
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 from dotmd_parser.parser import (
     build_graph,
@@ -75,7 +75,38 @@ from dotmd_parser.cache_order import (
     order_key,
     prefix_stability,
 )
+from dotmd_parser.ledger import (
+    append_event,
+    read_events,
+    active_tags,
+    static_tags,
+    all_active_tags,
+    risk_level,
+    risk_report,
+    default_ledger_path,
+    RISK_TAGS,
+    HIGH_TAGS,
+)
+from dotmd_parser.checks import (
+    run_checks,
+    summarize,
+    exit_code,
+    format_text,
+    format_json,
+    format_sarif,
+    CHECK_SCHEMA,
+)
 from dotmd_parser.openrag import push_to_openrag
+from dotmd_parser.scan import (
+    scan_content,
+    DEFAULT_RULES,
+    OPTIONAL_RULES,
+    ALL_RULES,
+)
+from dotmd_parser.plan import (
+    build_plan,
+    render_ascii,
+)
 
 __all__ = [
     "__version__",
@@ -135,6 +166,33 @@ __all__ = [
     "git_change_counts",
     "order_key",
     "prefix_stability",
+    # ledger
+    "append_event",
+    "read_events",
+    "active_tags",
+    "static_tags",
+    "all_active_tags",
+    "risk_level",
+    "risk_report",
+    "default_ledger_path",
+    "RISK_TAGS",
+    "HIGH_TAGS",
+    # checks
+    "run_checks",
+    "summarize",
+    "exit_code",
+    "format_text",
+    "format_json",
+    "format_sarif",
+    "CHECK_SCHEMA",
     # openrag
     "push_to_openrag",
+    # scan
+    "scan_content",
+    "DEFAULT_RULES",
+    "OPTIONAL_RULES",
+    "ALL_RULES",
+    # plan
+    "build_plan",
+    "render_ascii",
 ]

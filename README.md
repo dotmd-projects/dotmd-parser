@@ -130,6 +130,24 @@ print(result["placeholders"])  # Unresolved {{variable}} names
 print(result["warnings"])      # Circular refs, missing files, etc.
 ```
 
+#### Injection scanning
+
+`resolve` scans content pulled in via `@include` for prompt-injection
+patterns (role spoofing like `System:`, instruction overrides like "ignore
+previous instructions"). Findings print to stderr; the expanded content is
+unchanged by default.
+
+```bash
+dotmd-parser resolve ./skill/SKILL.md                      # scan on, warn (default)
+dotmd-parser resolve ./skill/SKILL.md --no-scan            # disable scanning
+dotmd-parser resolve ./skill/SKILL.md --scan-rule tool-exfil   # add an opt-in rule
+dotmd-parser resolve ./skill/SKILL.md --block              # replace injected includes with a placeholder
+```
+
+The root/entry file is trusted and not scanned — only `@include`-pulled
+files are. Matches inside fenced code blocks are ignored, and
+`<!-- dotmd-allow: role-spoof -->` (or `all`) in a file suppresses that rule.
+
 ### dependents_of — Reverse dependency query
 
 ```python
@@ -184,11 +202,12 @@ from dotmd_parser import parse_directives, parse_read_refs, parse_placeholders, 
 | `dotmd-parser dotmd-index <path> --push-openrag` | After writing, ingest into OpenRAG (`pip install dotmd-parser[openrag]`) |
 | `dotmd-parser index <path>` | Build and save `.claude/dotmd-index.json` |
 | `dotmd-parser index <path> --scope <subdir>` | Incrementally re-index one subfolder, merge into the existing index |
-| `dotmd-parser check <path>` | Exit non-zero on cycles / missing refs (CI-friendly) |
+| `dotmd-parser check <path>` | Health gate (CI): cycles, missing refs, unresolved placeholders, conflicts |
 | `dotmd-parser affects <path> <file>` | Reverse dependencies of `<file>` |
 | `dotmd-parser deps <path> <file>` | Direct dependencies of `<file>` |
 | `dotmd-parser digest <path>` | Token-efficient text summary for LLM context |
 | `dotmd-parser tree <path>` | ASCII dependency tree |
+| `dotmd-parser plan <path>` | Parallel delegation plan (JSON) |
 | `dotmd-parser resolve <file> [--var k=v]` | Recursively expand `@include` |
 | `dotmd-parser analyze <path>` | AI dependency detection (requires `ANTHROPIC_API_KEY`) |
 | `dotmd-parser analyze <path> --dry-run` | **API-free**: estimate tokens and USD cost |
@@ -205,6 +224,71 @@ dotmd-parser index ./my-skill/             # one-off; cached until files change
 dotmd-parser digest ./my-skill/            # compact summary for the LLM
 dotmd-parser affects ./my-skill/ shared/role.md
 ```
+
+### `ledger` / `risk` — edit-risk governance
+
+Record per-file risk history in an append-only JSONL ledger
+(`.claude/dotmd-ledger.jsonl`) and query it before editing. `risk` combines
+reverse-dependency impact (`affects`) with active risk tags (ledger replay ∪
+frontmatter `risk:`).
+
+```bash
+dotmd-parser ledger add . shared/role.md --tag fix-failed --note "retry hung"
+dotmd-parser ledger clear . shared/role.md --tag fix-failed   # or --all
+dotmd-parser risk . shared/role.md                            # text report
+dotmd-parser risk . shared/role.md --json
+```
+
+Tags: `fix-failed`, `fragile`, `security-sensitive`, `deprecated` (the first
+two are "high"). `--fail-on high|any|never` controls the exit code, so a
+PreToolUse hook can warn before risky edits:
+
+```bash
+dotmd-parser risk . "$FILE_PATH" --fail-on high \
+  || echo "[dotmd] high-risk file (last fix failed / security-sensitive) — review before editing"
+```
+
+### `check` — guidance health gate (CI)
+
+Deterministic health check over the dependency graph. Detects cycles and
+missing references (errors), plus unresolved `{{placeholders}}` and
+conflicting directives (warnings). Optionally flags orphan files.
+
+```bash
+dotmd-parser check ./my-skill                       # text, fails on errors
+dotmd-parser check ./my-skill --fail-on warning     # also fail on warnings
+dotmd-parser check ./my-skill --format json
+dotmd-parser check ./my-skill --format sarif --out dotmd.sarif
+dotmd-parser check ./my-skill --check orphans       # opt-in orphan detection
+```
+
+`--fail-on` chooses the exit-code threshold (`error` default, `warning`, or
+`never`). Use `--format sarif` with GitHub's `upload-sarif` action to get
+inline PR annotations:
+
+```yaml
+- run: dotmd-parser check . --format sarif --out dotmd.sarif --fail-on never
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: dotmd.sarif }
+- run: dotmd-parser check . --fail-on warning   # gate the PR
+```
+### `plan` — parallel delegation plan
+
+Generate a static execution plan from the `@delegate` graph: topological
+batches (parallel levels), per-task subtree context, plus conflict and cycle
+pre-detection. Intended for a parent agent that fans out subagents.
+
+```bash
+dotmd-parser plan ./my-skill            # plan(JSON) to stdout
+dotmd-parser plan ./my-skill --ascii    # human-readable view
+dotmd-parser plan ./my-skill --out plan.json
+dotmd-parser plan ./my-skill --strict   # exit 1 on cycles/conflicts (CI)
+```
+
+Each task in the JSON carries a `context` array (the subtree files to hand the
+subagent). Same-batch shared dependencies are reported in `conflicts[]` as
+warnings — the batch stays parallel. Mutual `@delegate` references are reported
+in `cycles[]` and excluded from batches.
 
 ## `dotmd-index.md` — folder overview in a single file
 
