@@ -5,6 +5,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-22
+
 ### Added
 - **`dotmd-index --order cache`（キャッシュ親和ソート）** — Files セクションを
   変更頻度の低い順（git 履歴ベース、非リポは fallback）に並べ、LLM のプレフィックス
