@@ -70,6 +70,15 @@ from dotmd_parser.index_md import (
     DEFAULT_INDEX_FILENAME,
     INDEX_MD_SCHEMA,
 )
+from dotmd_parser.checks import (
+    run_checks,
+    summarize,
+    exit_code,
+    format_text,
+    format_json,
+    format_sarif,
+    CHECK_SCHEMA,
+)
 from dotmd_parser.openrag import push_to_openrag
 from dotmd_parser.plan import (
     build_plan,
@@ -130,6 +139,14 @@ __all__ = [
     "extract_frontmatter",
     "DEFAULT_INDEX_FILENAME",
     "INDEX_MD_SCHEMA",
+    # checks
+    "run_checks",
+    "summarize",
+    "exit_code",
+    "format_text",
+    "format_json",
+    "format_sarif",
+    "CHECK_SCHEMA",
     # openrag
     "push_to_openrag",
     # plan

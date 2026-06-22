@@ -3,6 +3,16 @@
 All notable changes to dotmd-parser are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **`check` を CI ゲートに拡張** — 循環/欠落参照に加え、未解決 placeholder・
+  矛盾 directive（同一ターゲットへ include/ref/delegate のうち 2 種以上）を
+  検出。`--format text|json|sarif`、`--fail-on error|warning|never`、
+  `--check orphans`（opt-in の孤立ファイル検出）、`--out FILE` を追加。
+  SARIF は GitHub code scanning に upload して PR インライン注釈にできる。
+  既定挙動（cycle/missing で exit 1）は後方互換（depth超過・読込エラーも error 級として exit 1 対象に追加）。`run_checks` ほかを公開 API に追加。
+  設計: `docs/superpowers/specs/2026-06-20-guidance-health-check-design.md`
 ## [0.8.0] - 2026-06-20
 
 ### Added
