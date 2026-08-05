@@ -98,10 +98,12 @@ def merge_ontology(partials: list[dict], meta: dict) -> dict:
 def _normalize_types(elements: dict) -> dict:
     """Normalize unknown datatype types to 'string', stashing original in _type_warning."""
     out = {**EMPTY_ELEMENTS, **(elements or {})}
+    normalized = []
     for dp in out["datatype_properties"]:
         if dp.get("type") not in VALID_TYPES:
-            dp["_type_warning"] = dp.get("type")
-            dp["type"] = "string"
+            dp = {**dp, "_type_warning": dp.get("type"), "type": "string"}
+        normalized.append(dp)
+    out["datatype_properties"] = normalized
     return out
 
 
