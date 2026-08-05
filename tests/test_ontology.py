@@ -219,5 +219,18 @@ class TestOrchestrator(unittest.TestCase):
         tmp.cleanup()
 
 
+class TestEval(unittest.TestCase):
+    def test_eval_with_caller(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}]}}], _meta())
+
+        def fake(prompt, system, model):
+            return '```json\n{"coverage": 0.8, "faithfulness": 0.9, "notes": "ok"}\n```'
+
+        score = O.eval_ontology(ir, "corpus summary", caller=fake)
+        self.assertEqual(score["coverage"], 0.8)
+        self.assertEqual(score["faithfulness"], 0.9)
+
+
 if __name__ == "__main__":
     unittest.main()

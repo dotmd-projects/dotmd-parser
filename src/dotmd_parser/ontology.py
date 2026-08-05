@@ -481,3 +481,22 @@ def apply_ontology_from_file(directory, json_path, out_dir=None,
     out_dir = out_dir or (Path(directory).resolve() / "ontology")
     written = write_ontology(ir, out_dir, emit=emit)
     return {"ir": ir, "report": report, "written": written, "meta_warnings": meta_warnings}
+
+
+def eval_ontology(ir, corpus_summary, model=None, api_key=None, *, caller=None) -> dict:
+    """Opt-in LLM rubric score: how well `ir` covers/faithfully reflects the corpus."""
+    if api_key is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if caller is None and not api_key:
+        raise ValueError("ANTHROPIC_API_KEY required for --eval (or inject a caller).")
+    resolved_model = model or os.environ.get("CLAUDE_MODEL", llm.DEFAULT_MODEL)
+    summary = (f"classes={[c['name'] for c in ir['classes']]}\n"
+               f"object_properties={[o['name'] for o in ir['object_properties']]}\n"
+               f"datatype_properties={[d['name'] for d in ir['datatype_properties']]}")
+    template = llm.load_prompt_template("eval-ontology")
+    prompt = (template.replace("{{ontology_summary}}", summary)
+                      .replace("{{corpus_summary}}", corpus_summary))
+    first, _, rest = prompt.partition("\n")
+    raw = (caller(rest.strip(), first.strip(), resolved_model) if caller
+           else llm.call_claude(rest.strip(), first.strip(), api_key, resolved_model))
+    return llm.extract_json(raw)

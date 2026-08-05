@@ -478,6 +478,16 @@ def cmd_ontology(args: argparse.Namespace) -> int:
     print(f"  classes={len(ir['classes'])} dprops={len(ir['datatype_properties'])} "
           f"oprops={len(ir['object_properties'])} vocabs={len(ir['vocabularies'])}")
 
+    if args.do_eval and not args.apply_from:
+        from dotmd_parser.ontology import eval_ontology as _eval
+        summary = f"{len(ir['classes'])} classes over docs: {ir['meta']['source_docs']}"
+        try:
+            score = _eval(ir, summary, model=args.model)
+            print(f"eval: coverage={score.get('coverage')} "
+                  f"faithfulness={score.get('faithfulness')} — {score.get('notes','')}")
+        except (ValueError, RuntimeError) as e:
+            print(f"warning: eval skipped: {e}", file=sys.stderr)
+
     if res["report"]["errors"]:
         for e in res["report"]["errors"]:
             print(f"error: {e}", file=sys.stderr)
@@ -760,6 +770,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_onto.add_argument("--ext", action="append", help="Extension to include (repeatable)")
     p_onto.add_argument("--check", action="store_true",
                         help="Exit non-zero when validation finds errors (CI gate)")
+    p_onto.add_argument("--eval", action="store_true", dest="do_eval",
+                        help="Also run an LLM rubric score (needs API key)")
     p_onto.set_defaults(func=cmd_ontology)
 
     p_inv = sub.add_parser(
