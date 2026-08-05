@@ -81,5 +81,23 @@ class TestEmitYaml(unittest.TestCase):
         self.assertIn("classes:", y1)
 
 
+class TestEmitYamlEscaping(unittest.TestCase):
+    def test_escaping_and_empty_and_null(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Quote", "label_ja": 'a"b\\c\nd', "domain_group": "g"}],
+            "datatype_properties": [{"name": "p", "domain": "Quote", "type": "string",
+                                     "label_ja": "x", "enum": None}],
+            "object_properties": [], "vocabularies": [],
+            "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+        y = O.emit_yaml(ir)
+        # escaping: backslash, double-quote, and newline are escaped inside the scalar
+        self.assertIn('label_ja: "a\\"b\\\\c\\nd"', y)
+        # empty section renders as [] on one line, not a dangling header
+        self.assertIn("object_properties: []", y)
+        self.assertIn("vocabularies: []", y)
+        # null enum renders as the bareword null
+        self.assertIn("enum: null", y)
+
+
 if __name__ == "__main__":
     unittest.main()
