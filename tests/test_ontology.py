@@ -232,5 +232,21 @@ class TestEval(unittest.TestCase):
         self.assertEqual(score["faithfulness"], 0.9)
 
 
+class TestDeterminism(unittest.TestCase):
+    def test_same_input_same_output(self):
+        partials = [{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "B", "label_ja": "b", "domain_group": "g"},
+                        {"name": "A", "label_ja": "a", "domain_group": "g"}]}}]
+        m = {"namespace": "https://ex.org/o#", "prefix": "ex", "domain": "d",
+             "built_from": "c", "source_docs": ["a.md"], "generated_by": "t"}
+        ir1 = O.merge_ontology(partials, m)
+        ir2 = O.merge_ontology(list(partials), dict(m))
+        self.assertEqual(O.emit_yaml(ir1), O.emit_yaml(ir2))
+        self.assertEqual(O.emit_ttl(ir1), O.emit_ttl(ir2))
+        self.assertEqual(O.emit_design_md(ir1), O.emit_design_md(ir2))
+        # classes sorted A before B regardless of input order
+        self.assertEqual([c["name"] for c in ir1["classes"]], ["A", "B"])
+
+
 if __name__ == "__main__":
     unittest.main()

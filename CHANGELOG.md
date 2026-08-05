@@ -5,6 +5,18 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`ontology` subcommand** — text-first domain ontology construction from a
+  folder of `.md` analysis docs. Extracts per-document, merges with
+  dedup/provenance/first-seen-wins conflict flagging, and emits
+  `ontology.yml` (canonical IR), `ontology.ttl` (OWL-lite Turtle), and a
+  §5-style design markdown — deterministically, so re-runs over the same
+  input are byte-identical. Host-agent mode (`--plan` / `--apply-from`, no
+  API key needed), structural validation gate (`--check`, plus optional
+  Turtle syntax validation via the `rdf` extra), and an opt-in LLM rubric
+  score (`--eval`).
+  設計: `docs/superpowers/specs/2026-08-05-ontology-builder-design.md`
+
 ## [0.10.0] - 2026-06-22
 
 ### Added
