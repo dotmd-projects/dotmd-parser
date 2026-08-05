@@ -66,5 +66,20 @@ class TestExtract(unittest.TestCase):
         tmp.cleanup()
 
 
+class TestEmitYaml(unittest.TestCase):
+    def _ir(self):
+        return O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+            "datatype_properties": [], "object_properties": [], "vocabularies": [],
+            "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+
+    def test_deterministic_and_contains_class(self):
+        y1 = O.emit_yaml(self._ir())
+        y2 = O.emit_yaml(self._ir())
+        self.assertEqual(y1, y2)                 # deterministic
+        self.assertIn('name: "Application"', y1)
+        self.assertIn("classes:", y1)
+
+
 if __name__ == "__main__":
     unittest.main()

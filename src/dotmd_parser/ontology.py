@@ -134,3 +134,55 @@ def extract_ontology(directory, api_key=None, extensions=None, model=None, *, ca
         elements = _normalize_types(llm.extract_json(raw))
         partials.append({"source": doc["path"], "elements": elements})
     return partials
+
+
+def _yq(value) -> str:
+    """Quote a scalar for YAML (double-quoted, escaped). None -> null."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    s = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{s}"'
+
+
+def _yaml_list_field(values: list) -> str:
+    return "[" + ", ".join(_yq(v) for v in values) + "]"
+
+
+def emit_yaml(ir: dict) -> str:
+    lines: list[str] = ["# ontology.yml — dotmd auto-constructed (v1, text-first)"]
+    m = ir["meta"]
+    lines.append("meta:")
+    for k in ("namespace", "prefix", "domain", "built_from", "generated_by"):
+        lines.append(f"  {k}: {_yq(m.get(k))}")
+    lines.append(f"  source_docs: {_yaml_list_field(m.get('source_docs', []))}")
+
+    def block(section: str, rows: list[dict], fields: list[str]) -> None:
+        lines.append(f"{section}:")
+        if not rows:
+            lines[-1] = f"{section}: []"
+            return
+        for row in rows:
+            first = True
+            for f in fields:
+                if f not in row:
+                    continue
+                val = row[f]
+                rendered = _yaml_list_field(val) if isinstance(val, list) else _yq(val)
+                prefix = "  - " if first else "    "
+                lines.append(f"{prefix}{f}: {rendered}")
+                first = False
+
+    block("classes", ir["classes"], ["name", "label_ja", "domain_group", "provenance"])
+    block("datatype_properties", ir["datatype_properties"],
+          ["name", "domain", "type", "label_ja", "enum", "provenance"])
+    block("object_properties", ir["object_properties"],
+          ["name", "from", "to", "cardinality", "characteristics", "note", "provenance"])
+    block("vocabularies", ir["vocabularies"], ["name", "values", "provenance"])
+    block("invariants", ir["invariants"], ["id", "statement", "kind", "provenance"])
+    block("conflicts", ir["conflicts"], ["kind", "detail", "provenance"])
+    block("open_questions", ir["open_questions"], ["text", "provenance"])
+    return "\n".join(lines) + "\n"
