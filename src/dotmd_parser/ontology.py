@@ -186,3 +186,82 @@ def emit_yaml(ir: dict) -> str:
     block("conflicts", ir["conflicts"], ["kind", "detail", "provenance"])
     block("open_questions", ir["open_questions"], ["text", "provenance"])
     return "\n".join(lines) + "\n"
+
+
+XSD_MAP = {"string": "xsd:string", "decimal": "xsd:decimal", "integer": "xsd:integer",
+           "date": "xsd:date", "dateTime": "xsd:dateTime", "boolean": "xsd:boolean"}
+CHAR_MAP = {"Functional": "owl:FunctionalProperty",
+            "InverseFunctional": "owl:InverseFunctionalProperty",
+            "Symmetric": "owl:SymmetricProperty", "Transitive": "owl:TransitiveProperty"}
+
+
+def _ttl_str(s: str) -> str:
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+
+
+def emit_ttl(ir: dict) -> str:
+    m = ir["meta"]
+    p = m["prefix"]
+    lines = [
+        f"@prefix {p}: <{m['namespace']}> .",
+        "@prefix owl: <http://www.w3.org/2002/07/owl#> .",
+        "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .",
+        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+        "@prefix skos: <http://www.w3.org/2004/02/skos/core#> .",
+        "",
+    ]
+
+    def prov(item, indent="    "):
+        for src in item.get("provenance", []):
+            lines.append(f"{indent}{p}:sourceDoc {_ttl_str(src)} ;")
+
+    for c in ir["classes"]:
+        lines.append(f"{p}:{c['name']} a owl:Class ;")
+        if c.get("label_ja"):
+            lines.append(f'    rdfs:label {_ttl_str(c["label_ja"])}@ja ;')
+        prov(c)
+        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        lines.append("")
+
+    for dp in ir["datatype_properties"]:
+        lines.append(f"{p}:{dp['name']} a owl:DatatypeProperty ;")
+        if dp.get("domain"):
+            lines.append(f"    rdfs:domain {p}:{dp['domain']} ;")
+        lines.append(f"    rdfs:range {XSD_MAP.get(dp.get('type'), 'xsd:string')} ;")
+        if dp.get("label_ja"):
+            lines.append(f'    rdfs:label {_ttl_str(dp["label_ja"])}@ja ;')
+        if dp.get("enum"):
+            lines.append(f"    {p}:usesVocabulary {p}:{dp['enum']} ;")
+        prov(dp)
+        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        lines.append("")
+
+    for op in ir["object_properties"]:
+        types = ["owl:ObjectProperty"] + [CHAR_MAP[c] for c in op.get("characteristics", [])
+                                          if c in CHAR_MAP]
+        lines.append(f"{p}:{op['name']} a {', '.join(types)} ;")
+        if op.get("from"):
+            lines.append(f"    rdfs:domain {p}:{op['from']} ;")
+        if op.get("to"):
+            lines.append(f"    rdfs:range {p}:{op['to']} ;")
+        if op.get("cardinality"):
+            lines.append(f"    {p}:cardinality {_ttl_str(op['cardinality'])} ;")
+        prov(op)
+        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        lines.append("")
+
+    for v in ir["vocabularies"]:
+        lines.append(f"{p}:{v['name']} a skos:ConceptScheme .")
+        for i, val in enumerate(v.get("values", [])):
+            lines.append(f"{p}:{v['name']}_{i} a skos:Concept ; "
+                         f"skos:prefLabel {_ttl_str(val)} ; skos:inScheme {p}:{v['name']} .")
+        lines.append("")
+
+    for inv in ir["invariants"]:
+        lines.append(f"{p}:{inv['id']} a {p}:Invariant ;")
+        lines.append(f"    rdfs:comment {_ttl_str(inv['statement'])} ;")
+        prov(inv)
+        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        lines.append("")
+
+    return "\n".join(lines) + "\n"

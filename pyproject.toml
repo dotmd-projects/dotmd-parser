@@ -44,10 +44,12 @@ Issues = "https://github.com/dotmd-projects/dotmd-parser/issues"
 openrag = ["openrag-sdk>=0.3.1"]
 pdf = ["pdfplumber>=0.10"]
 docx = ["python-docx>=1.0"]
+rdf = ["rdflib>=7.0"]
 all = [
     "openrag-sdk>=0.3.1",
     "pdfplumber>=0.10",
     "python-docx>=1.0",
+    "rdflib>=7.0",
 ]
 
 [project.scripts]

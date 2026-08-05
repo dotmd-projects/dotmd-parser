@@ -99,5 +99,34 @@ class TestEmitYamlEscaping(unittest.TestCase):
         self.assertIn("enum: null", y)
 
 
+class TestEmitTtl(unittest.TestCase):
+    def _ir(self):
+        return O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"},
+                        {"name": "CreditAssessment", "label_ja": "審査", "domain_group": "取引"}],
+            "datatype_properties": [{"name": "feeRate", "domain": "Application",
+                                     "type": "decimal", "label_ja": "手数料率", "enum": None}],
+            "object_properties": [{"name": "evaluatedBy", "from": "Application",
+                                   "to": "CreditAssessment", "cardinality": "1:1",
+                                   "characteristics": ["Functional"], "note": "鎖"}],
+            "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+
+    def test_parses_with_rdflib(self):
+        try:
+            import rdflib  # noqa: F401
+        except ImportError:
+            self.skipTest("rdflib not installed")
+        from rdflib import Graph
+        g = Graph()
+        g.parse(data=O.emit_ttl(self._ir()), format="turtle")
+        # 2 classes present as owl:Class
+        from rdflib.namespace import OWL, RDF
+        classes = set(g.subjects(RDF.type, OWL.Class))
+        self.assertEqual(len(classes), 2)
+
+    def test_cardinality_annotation_present(self):
+        self.assertIn('ex:cardinality "1:1"', O.emit_ttl(self._ir()))
+
+
 if __name__ == "__main__":
     unittest.main()
