@@ -6,10 +6,12 @@ IR (ontology.yml) plus Turtle (.ttl) and a §5-style design markdown.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
-from dotmd_parser.analyze import scan_documents
+from dotmd_parser.analyze import estimate_cost, scan_documents
 from dotmd_parser import llm
 
 ELEMENT_KEYS = (
@@ -86,7 +88,7 @@ def merge_ontology(partials: list[dict], meta: dict) -> dict:
     return {
         "meta": meta,
         "classes": sorted(classes.values(), key=lambda x: x["name"]),
-        "datatype_properties": sorted(dprops.values(), key=lambda x: (x.get("domain", ""), x["name"])),
+        "datatype_properties": sorted(dprops.values(), key=lambda x: (x.get("domain") or "", x["name"])),
         "object_properties": sorted(oprops.values(), key=lambda x: x["name"]),
         "vocabularies": sorted(vocabs.values(), key=lambda x: x["name"]),
         "invariants": invariants,
@@ -136,6 +138,12 @@ def extract_ontology(directory, api_key=None, extensions=None, model=None, *, ca
     return partials
 
 
+def _escape_scalar(s: str) -> str:
+    """Escape backslash, double-quote, newline, and carriage return for a quoted scalar."""
+    return (str(s).replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r"))
+
+
 def _yq(value) -> str:
     """Quote a scalar for YAML (double-quoted, escaped). None -> null."""
     if value is None:
@@ -144,8 +152,7 @@ def _yq(value) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
-    s = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    return f'"{s}"'
+    return f'"{_escape_scalar(value)}"'
 
 
 def _yaml_list_field(values: list) -> str:
@@ -196,7 +203,7 @@ CHAR_MAP = {"Functional": "owl:FunctionalProperty",
 
 
 def _ttl_str(s: str) -> str:
-    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+    return '"' + _escape_scalar(s) + '"'
 
 
 def _terminate(lines: list) -> None:
@@ -326,16 +333,15 @@ def emit_design_md(ir: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-import re as _re
-
-_CARD_RE = _re.compile(r"^(1|多|N|M|\d+)(:(0\.\.1|0\.\.\*|1|多|N|M|\d+))?$")
+_CARD_RE = re.compile(r"^(1|多|N|M|\d+)(:(0\.\.1|0\.\.\*|1|多|N|M|\d+))?$")
+_LOCAL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
     errors: list[str] = []
     warnings: list[str] = []
-    class_names = {c["name"] for c in ir["classes"]}
-    vocab_names = {v["name"] for v in ir["vocabularies"]}
+    class_names = {_norm(c["name"]) for c in ir["classes"]}
+    vocab_names = {_norm(v["name"]) for v in ir["vocabularies"]}
 
     # duplicate names
     def dup_check(rows, kind):
@@ -348,10 +354,23 @@ def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
     dup_check(ir["datatype_properties"], "datatype property")
     dup_check(ir["object_properties"], "object property")
 
+    # always-on structural check: Turtle local names must be safe even when
+    # rdflib is unavailable to catch broken names via the parse below.
+    def local_name_check(rows, name_field="name"):
+        for r in rows:
+            name = r.get(name_field)
+            if name and not _LOCAL_NAME_RE.match(name):
+                errors.append(f"unsafe Turtle local name: {name}")
+    local_name_check(ir["classes"])
+    local_name_check(ir["datatype_properties"])
+    local_name_check(ir["object_properties"])
+    local_name_check(ir["vocabularies"])
+    local_name_check(ir["invariants"], name_field="id")
+
     for dp in ir["datatype_properties"]:
-        if dp.get("domain") and dp["domain"] not in class_names:
+        if dp.get("domain") and _norm(dp["domain"]) not in class_names:
             errors.append(f"datatype property {dp['name']} has dangling domain: {dp['domain']}")
-        if dp.get("enum") and dp["enum"] not in vocab_names:
+        if dp.get("enum") and _norm(dp["enum"]) not in vocab_names:
             errors.append(f"datatype property {dp['name']} references unknown enum: {dp['enum']}")
         if dp.get("_type_warning"):
             warnings.append(f"datatype property {dp['name']} had unknown type "
@@ -359,7 +378,7 @@ def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
 
     for op in ir["object_properties"]:
         for side in ("from", "to"):
-            if op.get(side) and op[side] not in class_names:
+            if op.get(side) and _norm(op[side]) not in class_names:
                 errors.append(f"object property {op['name']} has dangling {side}: {op[side]}")
         if op.get("cardinality") and not _CARD_RE.match(op["cardinality"]):
             errors.append(f"object property {op['name']} has bad cardinality: {op['cardinality']}")
@@ -383,14 +402,11 @@ def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
     return {"errors": errors, "warnings": warnings}
 
 
-import re as _re2
-from dotmd_parser.analyze import estimate_cost  # reuse analyze's cost model
-
 _EMIT_FILE = {"yml": "ontology.yml", "ttl": "ontology.ttl", "md": "ontology-design.md"}
 
 
 def _slug(name: str) -> str:
-    return _re2.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "ontology"
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "ontology"
 
 
 def infer_meta(directory, namespace=None, prefix=None, domain=None, source_docs=None):
@@ -462,13 +478,12 @@ def format_host_agent_plan(directory, extensions=None) -> str:
 def apply_ontology_from_file(directory, json_path, out_dir=None,
                              emit=("yml", "ttl", "md"),
                              namespace=None, prefix=None, domain=None) -> dict:
-    import json as _json
     path = Path(json_path)
     if not path.exists():
         raise FileNotFoundError(f"ontology JSON not found: {json_path}")
     try:
-        data = _json.loads(path.read_text(encoding="utf-8"))
-    except _json.JSONDecodeError as e:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
         raise ValueError(f"invalid JSON in {json_path}: {e}") from e
     # accept either a list of partials, or a single {"source","elements"} object
     partials = data if isinstance(data, list) else [data]

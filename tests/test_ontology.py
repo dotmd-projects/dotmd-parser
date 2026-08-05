@@ -45,6 +45,20 @@ class TestMerge(unittest.TestCase):
         self.assertTrue(any(c["kind"] == "naming" for c in ir["conflicts"]))
 
 
+class TestMergeNullDomain(unittest.TestCase):
+    def test_null_domain_does_not_crash_sort(self):
+        partials = [
+            {"source": "a.md", "elements": {**O.EMPTY_ELEMENTS, "datatype_properties": [
+                {"name": "p", "domain": None, "type": "string", "label_ja": "x", "enum": None}]}},
+            {"source": "b.md", "elements": {**O.EMPTY_ELEMENTS, "datatype_properties": [
+                {"name": "q", "domain": "Application", "type": "string",
+                 "label_ja": "y", "enum": None}]}},
+        ]
+        ir = O.merge_ontology(partials, _meta())  # must not raise TypeError
+        names = {dp["name"] for dp in ir["datatype_properties"]}
+        self.assertEqual(names, {"p", "q"})
+
+
 class TestExtract(unittest.TestCase):
     def test_extract_with_caller(self):
         tmp = tempfile.TemporaryDirectory()
@@ -185,6 +199,22 @@ class TestValidate(unittest.TestCase):
                                    "characteristics": ["Functional"], "note": ""}],
             "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
         self.assertEqual(O.validate_ontology(ir)["errors"], [])
+
+    def test_unsafe_local_name_flagged_without_ttl(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "Bad Name", "label_ja": "x", "domain_group": "g"}]}}], _meta())
+        report = O.validate_ontology(ir)  # no ttl passed
+        self.assertTrue(report["errors"])
+        self.assertTrue(any("Bad Name" in e for e in report["errors"]))
+
+    def test_case_insensitive_domain_reference_not_dangling(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+            "datatype_properties": [{"name": "feeRate", "domain": "application",
+                                     "type": "decimal", "label_ja": "手数料率", "enum": None}]}}],
+            _meta())
+        report = O.validate_ontology(ir)
+        self.assertEqual(report["errors"], [])
 
 
 class TestOrchestrator(unittest.TestCase):

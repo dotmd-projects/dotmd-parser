@@ -2,7 +2,6 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from dotmd_parser.cli import run as cli_run
 

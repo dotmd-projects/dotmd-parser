@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Any
 
 from dotmd_parser.llm import (
-    CLAUDE_API_URL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     call_claude as _call_claude,
