@@ -6,7 +6,11 @@ IR (ontology.yml) plus Turtle (.ttl) and a §5-style design markdown.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+from dotmd_parser.analyze import scan_documents
+from dotmd_parser import llm
 
 ELEMENT_KEYS = (
     "classes", "datatype_properties", "object_properties",
@@ -89,3 +93,42 @@ def merge_ontology(partials: list[dict], meta: dict) -> dict:
         "conflicts": conflicts,
         "open_questions": open_qs,
     }
+
+
+def _normalize_types(elements: dict) -> dict:
+    """Normalize unknown datatype types to 'string', stashing original in _type_warning."""
+    out = {**EMPTY_ELEMENTS, **(elements or {})}
+    for dp in out["datatype_properties"]:
+        if dp.get("type") not in VALID_TYPES:
+            dp["_type_warning"] = dp.get("type")
+            dp["type"] = "string"
+    return out
+
+
+def extract_ontology(directory, api_key=None, extensions=None, model=None, *, caller=None):
+    """Map step: per-document LLM extraction. Returns partials with source paths."""
+    if extensions is None:
+        extensions = [".md", ".txt"]
+    if api_key is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if caller is None and not api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY is not set. Add it to .env or export it, "
+            "or use --plan for the no-API-key host-agent path."
+        )
+    resolved_model = model or os.environ.get("CLAUDE_MODEL", llm.DEFAULT_MODEL)
+    template = llm.load_prompt_template("extract-ontology")
+
+    partials: list[dict] = []
+    for doc in scan_documents(directory, extensions=extensions):
+        prompt = (template
+                  .replace("{{doc_path}}", doc["path"])
+                  .replace("{{doc_content}}", doc["content"]))
+        first, _, rest = prompt.partition("\n")
+        system = first.strip() or "You extract a domain ontology."
+        user = rest.strip() or prompt
+        raw = caller(user, system, resolved_model) if caller else llm.call_claude(
+            user, system, api_key, resolved_model)
+        elements = _normalize_types(llm.extract_json(raw))
+        partials.append({"source": doc["path"], "elements": elements})
+    return partials

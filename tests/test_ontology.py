@@ -1,4 +1,7 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 from dotmd_parser import ontology as O
 
 
@@ -40,6 +43,27 @@ class TestMerge(unittest.TestCase):
         self.assertEqual(len(ir["datatype_properties"]), 1)
         self.assertEqual(ir["datatype_properties"][0]["type"], "decimal")  # first-seen wins
         self.assertTrue(any(c["kind"] == "naming" for c in ir["conflicts"]))
+
+
+class TestExtract(unittest.TestCase):
+    def test_extract_with_caller(self):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        (root / "d.md").write_text("申請は会員が出す。", encoding="utf-8")
+
+        def fake(prompt, system, model):
+            body = {"classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+                    "datatype_properties": [{"name": "feeRate", "domain": "Application",
+                                             "type": "money", "label_ja": "手数料率", "enum": None}],
+                    "object_properties": [], "vocabularies": [], "invariants": [],
+                    "conflicts": [], "open_questions": []}
+            return "```json\n" + json.dumps(body) + "\n```"
+
+        partials = O.extract_ontology(root, caller=fake)
+        self.assertEqual(partials[0]["source"], "d.md")
+        # unknown type normalized to string
+        self.assertEqual(partials[0]["elements"]["datatype_properties"][0]["type"], "string")
+        tmp.cleanup()
 
 
 if __name__ == "__main__":
