@@ -381,3 +381,103 @@ def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
             errors.append(f"Turtle parse error: {e}")
 
     return {"errors": errors, "warnings": warnings}
+
+
+import re as _re2
+from dotmd_parser.analyze import estimate_cost  # reuse analyze's cost model
+
+_EMIT_FILE = {"yml": "ontology.yml", "ttl": "ontology.ttl", "md": "ontology-design.md"}
+
+
+def _slug(name: str) -> str:
+    return _re2.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "ontology"
+
+
+def infer_meta(directory, namespace=None, prefix=None, domain=None, source_docs=None):
+    warnings: list[str] = []
+    base = Path(directory).resolve()
+    slug = _slug(base.name)
+    if not namespace:
+        namespace = f"https://example.org/{slug}#"
+        warnings.append(f"no --namespace given; using placeholder {namespace}")
+    if not prefix:
+        prefix = slug.replace("-", "")[:8] or "onto"
+    meta = {"namespace": namespace, "prefix": prefix, "domain": domain or base.name,
+            "built_from": base.name, "source_docs": source_docs or [],
+            "generated_by": "dotmd-parser ontology v1"}
+    return meta, warnings
+
+
+def write_ontology(ir, out_dir, emit=("yml", "ttl", "md")) -> list[str]:
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    renderers = {"yml": emit_yaml, "ttl": emit_ttl, "md": emit_design_md}
+    written: list[str] = []
+    for kind in ("yml", "ttl", "md"):
+        if kind in emit:
+            path = out / _EMIT_FILE[kind]
+            path.write_text(renderers[kind](ir), encoding="utf-8")
+            written.append(str(path))
+    return written
+
+
+def build_ontology(directory, out_dir=None, emit=("yml", "ttl", "md"), *,
+                   namespace=None, prefix=None, domain=None,
+                   api_key=None, extensions=None, model=None, caller=None) -> dict:
+    partials = extract_ontology(directory, api_key=api_key, extensions=extensions,
+                                model=model, caller=caller)
+    source_docs = [p["source"] for p in partials]
+    meta, meta_warnings = infer_meta(directory, namespace, prefix, domain, source_docs)
+    ir = merge_ontology(partials, meta)
+    ttl = emit_ttl(ir)
+    report = validate_ontology(ir, ttl=ttl)
+    out_dir = out_dir or (Path(directory).resolve() / "ontology")
+    written = write_ontology(ir, out_dir, emit=emit)
+    return {"ir": ir, "report": report, "written": written, "meta_warnings": meta_warnings}
+
+
+def format_host_agent_plan(directory, extensions=None) -> str:
+    if extensions is None:
+        extensions = [".md", ".txt"]
+    root = Path(directory).resolve()
+    docs = [fp.relative_to(root).as_posix()
+            for ext in extensions for fp in sorted(root.rglob(f"*{ext}"))
+            if not any(part.startswith(".") for part in fp.relative_to(root).parts)]
+    template = llm.load_prompt_template("extract-ontology")
+    files = "\n".join(f"- `{d}`" for d in docs)
+    return (
+        "# dotmd-parser — ontology host-agent plan\n\n"
+        f"Target: `{root}`  ({len(docs)} documents)\n\n"
+        "For EACH document below, run the extraction task and collect the JSON "
+        "objects into a list of `{\"source\": <path>, \"elements\": <json>}`. "
+        "Save that list to `ontology.json`, then apply:\n\n"
+        "```bash\n"
+        f'dotmd-parser ontology "{root}" --apply-from ontology.json\n'
+        "```\n\n"
+        "## Documents\n\n" + files + "\n\n"
+        "## Extraction task (per document)\n\n```\n" + template.strip() + "\n```\n"
+    )
+
+
+def apply_ontology_from_file(directory, json_path, out_dir=None,
+                             emit=("yml", "ttl", "md"),
+                             namespace=None, prefix=None, domain=None) -> dict:
+    import json as _json
+    path = Path(json_path)
+    if not path.exists():
+        raise FileNotFoundError(f"ontology JSON not found: {json_path}")
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+    except _json.JSONDecodeError as e:
+        raise ValueError(f"invalid JSON in {json_path}: {e}") from e
+    # accept either a list of partials, or a single {"source","elements"} object
+    partials = data if isinstance(data, list) else [data]
+    partials = [{"source": p.get("source", "unknown"),
+                 "elements": _normalize_types(p.get("elements", p))} for p in partials]
+    source_docs = [p["source"] for p in partials]
+    meta, meta_warnings = infer_meta(directory, namespace, prefix, domain, source_docs)
+    ir = merge_ontology(partials, meta)
+    report = validate_ontology(ir, ttl=emit_ttl(ir))
+    out_dir = out_dir or (Path(directory).resolve() / "ontology")
+    written = write_ontology(ir, out_dir, emit=emit)
+    return {"ir": ir, "report": report, "written": written, "meta_warnings": meta_warnings}

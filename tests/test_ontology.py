@@ -187,5 +187,37 @@ class TestValidate(unittest.TestCase):
         self.assertEqual(O.validate_ontology(ir)["errors"], [])
 
 
+class TestOrchestrator(unittest.TestCase):
+    def test_build_and_write(self):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        (root / "d.md").write_text("申請は会員が出し、審査される。", encoding="utf-8")
+
+        def fake(prompt, system, model):
+            body = {"classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"},
+                                {"name": "CreditAssessment", "label_ja": "審査", "domain_group": "取引"}],
+                    "datatype_properties": [],
+                    "object_properties": [{"name": "evaluatedBy", "from": "Application",
+                                           "to": "CreditAssessment", "cardinality": "1:1",
+                                           "characteristics": ["Functional"], "note": "鎖"}],
+                    "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}
+            return "```json\n" + json.dumps(body) + "\n```"
+
+        res = O.build_ontology(root, caller=fake)
+        self.assertEqual(res["report"]["errors"], [])
+        names = {Path(w).name for w in res["written"]}
+        self.assertEqual(names, {"ontology.yml", "ontology.ttl", "ontology-design.md"})
+        self.assertTrue((root / "ontology" / "ontology.yml").exists())
+        tmp.cleanup()
+
+    def test_host_agent_plan_mentions_apply_from(self):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        (root / "d.md").write_text("x", encoding="utf-8")
+        plan = O.format_host_agent_plan(root)
+        self.assertIn("--apply-from", plan)
+        tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
