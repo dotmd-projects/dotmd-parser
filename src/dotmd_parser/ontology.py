@@ -271,3 +271,56 @@ def emit_ttl(ir: dict) -> str:
         lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+def emit_design_md(ir: dict) -> str:
+    m = ir["meta"]
+    out = [f"# {m.get('domain','')} ドメインオントロジー（自動生成）", "",
+           f"- namespace: `{m['namespace']}` / prefix: `{m['prefix']}`",
+           f"- built_from: `{m.get('built_from','')}`",
+           f"- source_docs: {len(m.get('source_docs', []))} 件", ""]
+
+    # classes grouped by domain_group
+    out += ["## クラス", "", "| ドメイン | クラス | 日本語 |", "|---|---|---|"]
+    for c in ir["classes"]:
+        out.append(f"| {c.get('domain_group','')} | {c['name']} | {c.get('label_ja','')} |")
+    out.append("")
+
+    # datatype properties by class
+    out += ["## データ型プロパティ", "", "| クラス | プロパティ | 型 | 日本語 | enum |", "|---|---|---|---|---|"]
+    for dp in ir["datatype_properties"]:
+        out.append(f"| {dp.get('domain','')} | {dp['name']} | {dp.get('type','')} | "
+                   f"{dp.get('label_ja','')} | {dp.get('enum') or ''} |")
+    out.append("")
+
+    # object properties
+    out += ["## オブジェクトプロパティ", "",
+            "| 関係 | From → To | カーディナリティ | characteristics | 備考 |",
+            "|---|---|---|---|---|"]
+    for op in ir["object_properties"]:
+        out.append(f"| {op['name']} | {op.get('from','')} → {op.get('to','')} | "
+                   f"{op.get('cardinality','')} | {', '.join(op.get('characteristics') or [])} | "
+                   f"{op.get('note','')} |")
+    out.append("")
+
+    if ir["vocabularies"]:
+        out += ["## 統制語彙", ""]
+        for v in ir["vocabularies"]:
+            out.append(f"- **{v['name']}**: {' | '.join(v.get('values', []))}")
+        out.append("")
+
+    if ir["invariants"]:
+        out += ["## 不変条件", ""]
+        for inv in ir["invariants"]:
+            out.append(f"- `{inv['id']}` ({inv.get('kind','')}): {inv['statement']}")
+        out.append("")
+
+    if ir["conflicts"] or ir["open_questions"]:
+        out += ["## 矛盾・未解決質問", ""]
+        for c in ir["conflicts"]:
+            out.append(f"- ⚠️ [{c.get('kind','')}] {c.get('detail','')}")
+        for q in ir["open_questions"]:
+            out.append(f"- ❓ {q.get('text','')}")
+        out.append("")
+
+    return "\n".join(out) + "\n"

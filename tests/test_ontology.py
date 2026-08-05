@@ -143,5 +143,22 @@ class TestEmitTtl(unittest.TestCase):
         self.assertIn('ex:sourceDoc "src.md"', ttl)
 
 
+class TestEmitDesignMd(unittest.TestCase):
+    def test_tables_present(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+            "datatype_properties": [{"name": "feeRate", "domain": "Application",
+                                     "type": "decimal", "label_ja": "手数料率", "enum": None}],
+            "object_properties": [{"name": "evaluatedBy", "from": "Application",
+                                   "to": "CreditAssessment", "cardinality": "1:1",
+                                   "characteristics": ["Functional"], "note": "鎖"}],
+            "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+        md = O.emit_design_md(ir)
+        self.assertIn("## クラス", md)
+        self.assertIn("Application", md)
+        self.assertIn("evaluatedBy", md)
+        self.assertIn("| Application → CreditAssessment | 1:1 |", md)
+
+
 if __name__ == "__main__":
     unittest.main()
