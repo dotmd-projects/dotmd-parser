@@ -127,6 +127,21 @@ class TestEmitTtl(unittest.TestCase):
     def test_cardinality_annotation_present(self):
         self.assertIn('ex:cardinality "1:1"', O.emit_ttl(self._ir()))
 
+    def test_null_characteristics_does_not_crash(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "A", "label_ja": "a", "domain_group": "g"},
+                        {"name": "B", "label_ja": "b", "domain_group": "g"}],
+            "object_properties": [{"name": "rel", "from": "A", "to": "B",
+                                   "cardinality": "1:1", "characteristics": None, "note": ""}]}}], _meta())
+        ttl = O.emit_ttl(ir)               # must not raise
+        self.assertIn("ex:rel a owl:ObjectProperty", ttl)
+
+    def test_vocabulary_emits_provenance(self):
+        ir = O.merge_ontology([{"source": "src.md", "elements": {**O.EMPTY_ELEMENTS,
+            "vocabularies": [{"name": "status", "values": ["x", "y"]}]}}], _meta())
+        ttl = O.emit_ttl(ir)
+        self.assertIn('ex:sourceDoc "src.md"', ttl)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -199,6 +199,10 @@ def _ttl_str(s: str) -> str:
     return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
+def _terminate(lines: list) -> None:
+    lines[-1] = lines[-1].rstrip(" ;") + " ."
+
+
 def emit_ttl(ir: dict) -> str:
     m = ir["meta"]
     p = m["prefix"]
@@ -220,7 +224,7 @@ def emit_ttl(ir: dict) -> str:
         if c.get("label_ja"):
             lines.append(f'    rdfs:label {_ttl_str(c["label_ja"])}@ja ;')
         prov(c)
-        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        _terminate(lines)
         lines.append("")
 
     for dp in ir["datatype_properties"]:
@@ -233,11 +237,11 @@ def emit_ttl(ir: dict) -> str:
         if dp.get("enum"):
             lines.append(f"    {p}:usesVocabulary {p}:{dp['enum']} ;")
         prov(dp)
-        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        _terminate(lines)
         lines.append("")
 
     for op in ir["object_properties"]:
-        types = ["owl:ObjectProperty"] + [CHAR_MAP[c] for c in op.get("characteristics", [])
+        types = ["owl:ObjectProperty"] + [CHAR_MAP[c] for c in (op.get("characteristics") or [])
                                           if c in CHAR_MAP]
         lines.append(f"{p}:{op['name']} a {', '.join(types)} ;")
         if op.get("from"):
@@ -247,11 +251,13 @@ def emit_ttl(ir: dict) -> str:
         if op.get("cardinality"):
             lines.append(f"    {p}:cardinality {_ttl_str(op['cardinality'])} ;")
         prov(op)
-        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        _terminate(lines)
         lines.append("")
 
     for v in ir["vocabularies"]:
-        lines.append(f"{p}:{v['name']} a skos:ConceptScheme .")
+        lines.append(f"{p}:{v['name']} a skos:ConceptScheme ;")
+        prov(v)
+        _terminate(lines)
         for i, val in enumerate(v.get("values", [])):
             lines.append(f"{p}:{v['name']}_{i} a skos:Concept ; "
                          f"skos:prefLabel {_ttl_str(val)} ; skos:inScheme {p}:{v['name']} .")
@@ -261,7 +267,7 @@ def emit_ttl(ir: dict) -> str:
         lines.append(f"{p}:{inv['id']} a {p}:Invariant ;")
         lines.append(f"    rdfs:comment {_ttl_str(inv['statement'])} ;")
         prov(inv)
-        lines[-1] = lines[-1].rstrip(" ;") + " ."
+        _terminate(lines)
         lines.append("")
 
     return "\n".join(lines) + "\n"
