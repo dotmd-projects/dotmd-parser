@@ -324,3 +324,60 @@ def emit_design_md(ir: dict) -> str:
         out.append("")
 
     return "\n".join(out) + "\n"
+
+
+import re as _re
+
+_CARD_RE = _re.compile(r"^(1|多|N|M|\d+)(:(0\.\.1|0\.\.\*|1|多|N|M|\d+))?$")
+
+
+def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
+    errors: list[str] = []
+    warnings: list[str] = []
+    class_names = {c["name"] for c in ir["classes"]}
+    vocab_names = {v["name"] for v in ir["vocabularies"]}
+
+    # duplicate names
+    def dup_check(rows, kind):
+        seen = set()
+        for r in rows:
+            if r["name"] in seen:
+                errors.append(f"duplicate {kind} name: {r['name']}")
+            seen.add(r["name"])
+    dup_check(ir["classes"], "class")
+    dup_check(ir["datatype_properties"], "datatype property")
+    dup_check(ir["object_properties"], "object property")
+
+    for dp in ir["datatype_properties"]:
+        if dp.get("domain") and dp["domain"] not in class_names:
+            errors.append(f"datatype property {dp['name']} has dangling domain: {dp['domain']}")
+        if dp.get("enum") and dp["enum"] not in vocab_names:
+            errors.append(f"datatype property {dp['name']} references unknown enum: {dp['enum']}")
+        if dp.get("_type_warning"):
+            warnings.append(f"datatype property {dp['name']} had unknown type "
+                            f"'{dp['_type_warning']}', coerced to string")
+
+    for op in ir["object_properties"]:
+        for side in ("from", "to"):
+            if op.get(side) and op[side] not in class_names:
+                errors.append(f"object property {op['name']} has dangling {side}: {op[side]}")
+        if op.get("cardinality") and not _CARD_RE.match(op["cardinality"]):
+            errors.append(f"object property {op['name']} has bad cardinality: {op['cardinality']}")
+        for ch in (op.get("characteristics") or []):
+            if ch not in CHAR_MAP:
+                errors.append(f"object property {op['name']} has unknown characteristic: {ch}")
+
+    for row in [*ir["classes"], *ir["datatype_properties"], *ir["object_properties"]]:
+        if not row.get("provenance"):
+            warnings.append(f"{row['name']} has no provenance")
+
+    if ttl is not None:
+        try:
+            from rdflib import Graph
+            Graph().parse(data=ttl, format="turtle")
+        except ImportError:
+            warnings.append("rdflib not installed; skipped Turtle syntax validation")
+        except Exception as e:  # noqa: BLE001 — surface any parse error as a gate failure
+            errors.append(f"Turtle parse error: {e}")
+
+    return {"errors": errors, "warnings": warnings}

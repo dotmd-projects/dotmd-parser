@@ -160,5 +160,32 @@ class TestEmitDesignMd(unittest.TestCase):
         self.assertIn("| Application → CreditAssessment | 1:1 |", md)
 
 
+class TestValidate(unittest.TestCase):
+    def test_dangling_and_cardinality(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+            "datatype_properties": [],
+            "object_properties": [{"name": "evaluatedBy", "from": "Application",
+                                   "to": "Missing", "cardinality": "??",
+                                   "characteristics": ["Nope"], "note": ""}],
+            "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+        report = O.validate_ontology(ir)
+        joined = " ".join(report["errors"])
+        self.assertIn("Missing", joined)          # dangling range
+        self.assertIn("??", joined)               # bad cardinality
+        self.assertIn("Nope", joined)             # unknown characteristic
+
+    def test_clean_ir_passes(self):
+        ir = O.merge_ontology([{"source": "a.md", "elements": {
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"},
+                        {"name": "CreditAssessment", "label_ja": "審査", "domain_group": "取引"}],
+            "datatype_properties": [],
+            "object_properties": [{"name": "evaluatedBy", "from": "Application",
+                                   "to": "CreditAssessment", "cardinality": "1:1",
+                                   "characteristics": ["Functional"], "note": ""}],
+            "vocabularies": [], "invariants": [], "conflicts": [], "open_questions": []}}], _meta())
+        self.assertEqual(O.validate_ontology(ir)["errors"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
