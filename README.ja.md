@@ -399,6 +399,76 @@ $ dotmd-parser check ./brainstorming       # exit 0 — CI ゲート可能
 に降格できます。よって手動の `@include`→`@ref` 直しは不要です（必要なら 1 行
 書き換えで上書きも可能）。
 
+## `ontology` — テキストファーストなドメインオントロジー構築
+
+`.md` の分析ドキュメント群からドメインオントロジーを構築します。`analyze`
+（または手書き）でエンティティ・関係・業務ルールを散文で記述した
+ドキュメント一式ができたあと、それらを構造化された機械検証可能な成果物に
+したいときに使います:
+
+```bash
+export ANTHROPIC_API_KEY=...   # または ./.env に記載
+
+dotmd-parser ontology ./corpus/
+```
+
+`./corpus/ontology/` に 3 つの成果物を書き出します:
+
+- `ontology.yml` — 正規の中間表現（IR）（クラス、データ型/オブジェクト
+  プロパティ、語彙、不変条件、衝突、未解決事項）。決定的な順序で出力され、
+  PR での diff にも安全。
+- `ontology.ttl` — 同じ IR を OWL-lite Turtle 形式で表現したもの
+  （クラス、プロパティ、カーディナリティ/特性の注釈、SKOS 風の enum）。
+- `ontology-design.md` — 同じ IR から生成する §5 形式の人間可読な設計文書
+  （クラス・プロパティ・関係のテーブル）。
+
+フォルダ内の各ドキュメントは個別に抽出され、その部分結果は
+正規化名によるデデュープ・provenance 追跡（どのソースドキュメントが
+どの要素に寄与したか）・first-seen-wins の衝突解決でマージされます —
+衝突は黙って解決されるのではなく IR 内にフラグとして残ります。出力は
+決定的です: ドキュメントが発見される順序に関わらず、同じ入力は常に
+バイト同一の `ontology.yml` / `.ttl` / `.md` を生成します。
+
+### API キーなしのワークフロー（`--plan` / `--apply-from`）
+
+`analyze` と同じ host-agent パターンです:
+
+```bash
+dotmd-parser ontology ./corpus/ --plan > plan.md
+#   1. Claude Code（または任意の host agent）が plan.md を読み、
+#      各ドキュメントに対して抽出タスクをローカルで実行
+#   2. 収集した結果を ontology.json に保存
+#   3. 適用:
+dotmd-parser ontology ./corpus/ --apply-from ontology.json
+```
+
+### フラグ
+
+```bash
+dotmd-parser ontology ./corpus/ --check              # CI ゲート: 検証エラーで非ゼロ終了
+dotmd-parser ontology ./corpus/ --emit yml,ttl        # design-md を省略
+dotmd-parser ontology ./corpus/ --namespace "https://example.org/corpus#" \
+                                 --prefix corpus --domain "Lending"
+dotmd-parser ontology ./corpus/ --eval                # opt-in の LLM ルーブリックスコア（coverage/faithfulness）
+dotmd-parser ontology ./corpus/ --dry-run             # 抽出せずに API コストを見積もる
+```
+
+- `--check` は構造検証（クラス参照の宙ぶらりん、不正なカーディナリティ、
+  未知の OWL 特性）を実行し、エラーがあれば非ゼロ終了します — CI に組み込んで
+  オントロジーのドリフトをブロックできます。
+- `--namespace` / `--prefix` / `--domain` はオントロジーの IRI、Turtle
+  prefix、人間可読なドメインラベルを指定します。省略時はプレースホルダの
+  namespace に warning 付きでフォールバックします。
+- `--eval` は opt-in で API キーが必要です — Claude にビルド済みオントロジーの
+  coverage / faithfulness をコーパス要約と照らしてスコアリングさせます。
+  ゲートではなくルーブリックのシグナルです。
+- 現状はテキストファーストな v1 です — SPARQL やクエリレイヤーはまだ
+  ありません。IR / Turtle 出力はレビュー・バージョン管理・下流ツールでの
+  利用を想定しています。
+
+`pip install 'dotmd-parser[rdf]'` を入れると `--check` 時に `rdflib` による
+Turtle 構文検証が有効になります（任意。構造検証はどちらでも実行されます）。
+
 ## 開発
 
 ```bash

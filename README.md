@@ -476,6 +476,78 @@ apply_analysis("./docs/", proposal)
 
 For offline tests, pass a `caller=...` kwarg that returns a stub JSON string.
 
+## `ontology` — text-first domain ontology construction
+
+Build a canonical domain ontology from a folder of `.md` analysis docs —
+useful once `analyze` (or manual authoring) has produced a set of documents
+that describe entities, relationships, and business rules in prose, and you
+want a structured, machine-checkable artifact out of them:
+
+```bash
+export ANTHROPIC_API_KEY=...   # or put it in ./.env
+
+dotmd-parser ontology ./corpus/
+```
+
+This writes three artifacts to `./corpus/ontology/`:
+
+- `ontology.yml` — the canonical intermediate representation (classes,
+  datatype/object properties, vocabularies, invariants, conflicts, open
+  questions), deterministically ordered and safe to diff in a PR.
+- `ontology.ttl` — an OWL-lite Turtle rendering of the same IR (classes,
+  properties, cardinality/characteristic annotations, SKOS-style enums).
+- `ontology-design.md` — a §5-style human-readable design document (tables
+  of classes, properties, and relationships) generated from the same IR.
+
+Each document in the folder is extracted independently, then the partial
+results are merged with dedup-by-normalized-name, provenance tracking (which
+source doc contributed which element), and first-seen-wins conflict
+resolution — conflicts are flagged in the IR rather than silently resolved.
+Output is deterministic: the same input always produces byte-identical
+`ontology.yml` / `.ttl` / `.md`, regardless of the order documents were
+discovered in.
+
+### No-API-key workflow (`--plan` / `--apply-from`)
+
+Same host-agent pattern as `analyze`:
+
+```bash
+dotmd-parser ontology ./corpus/ --plan > plan.md
+#   1. Claude Code (or any host agent) reads plan.md and runs the extraction
+#      task against each document locally
+#   2. It saves the collected results to ontology.json
+#   3. Apply it:
+dotmd-parser ontology ./corpus/ --apply-from ontology.json
+```
+
+### Flags
+
+```bash
+dotmd-parser ontology ./corpus/ --check              # CI gate: non-zero exit on validation errors
+dotmd-parser ontology ./corpus/ --emit yml,ttl        # skip the design-md
+dotmd-parser ontology ./corpus/ --namespace "https://example.org/corpus#" \
+                                 --prefix corpus --domain "Lending"
+dotmd-parser ontology ./corpus/ --eval                # opt-in LLM rubric score (coverage/faithfulness)
+dotmd-parser ontology ./corpus/ --dry-run             # estimate API cost, no extraction
+```
+
+- `--check` runs structural validation (dangling class references, invalid
+  cardinality, unknown OWL characteristics) and exits non-zero on error —
+  wire it into CI to block ontology drift.
+- `--namespace` / `--prefix` / `--domain` control the ontology's IRI, Turtle
+  prefix, and human-readable domain label; omitted values fall back to a
+  placeholder namespace with a warning.
+- `--eval` is opt-in and requires an API key — it asks Claude to score the
+  built ontology's coverage and faithfulness against a corpus summary. It's
+  a rubric signal, not a gate.
+- This is a text-first v1: there's no SPARQL or query layer yet — the IR /
+  Turtle output is meant for review, versioning, and downstream tooling to
+  consume.
+
+Install `pip install 'dotmd-parser[rdf]'` to enable Turtle syntax validation
+via `rdflib` during `--check` (optional; structural validation runs either
+way).
+
 ## Claude Code Skill integration
 
 A ready-to-use Claude Code Skill is bundled with the package at

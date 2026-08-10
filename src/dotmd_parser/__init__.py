@@ -107,6 +107,15 @@ from dotmd_parser.plan import (
     build_plan,
     render_ascii,
 )
+from dotmd_parser.ontology import (
+    build_ontology,
+    merge_ontology,
+    extract_ontology,
+    emit_yaml,
+    emit_ttl,
+    emit_design_md,
+    validate_ontology,
+)
 
 __all__ = [
     "__version__",
@@ -195,4 +204,12 @@ __all__ = [
     # plan
     "build_plan",
     "render_ascii",
+    # ontology
+    "build_ontology",
+    "merge_ontology",
+    "extract_ontology",
+    "emit_yaml",
+    "emit_ttl",
+    "emit_design_md",
+    "validate_ontology",
 ]

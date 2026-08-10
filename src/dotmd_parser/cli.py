@@ -74,6 +74,13 @@ from dotmd_parser.checks import (
     exit_code as _check_exit_code,
 )
 from dotmd_parser.plan import build_plan as _build_plan, render_ascii as _render_ascii
+from dotmd_parser.ontology import (
+    build_ontology as _build_ontology,
+    format_host_agent_plan as _onto_plan,
+    apply_ontology_from_file as _onto_apply_from,
+    estimate_cost as _onto_estimate_cost,
+)
+from dotmd_parser.llm import load_dotenv as _onto_load_dotenv
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -424,6 +431,71 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ontology(args: argparse.Namespace) -> int:
+    """Construct a domain ontology from a folder of .md analysis docs."""
+    extensions = None
+    if args.ext:
+        extensions = [(e if e.startswith(".") else f".{e}") for e in args.ext]
+    emit = tuple(args.emit.split(",")) if args.emit else ("yml", "ttl", "md")
+
+    if args.dry_run:
+        est = _onto_estimate_cost(args.path, model=args.model, extensions=extensions)
+        print(json.dumps(est, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.plan:
+        print(_onto_plan(args.path, extensions=extensions))
+        return 0
+
+    try:
+        if args.apply_from:
+            res = _onto_apply_from(args.path, args.apply_from, out_dir=args.out, emit=emit,
+                                   namespace=args.namespace, prefix=args.prefix, domain=args.domain)
+        else:
+            _onto_load_dotenv()
+            res = _build_ontology(args.path, out_dir=args.out, emit=emit,
+                                  namespace=args.namespace, prefix=args.prefix,
+                                  domain=args.domain, extensions=extensions, model=args.model)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        print("hint: use `--plan` for the no-API-key host-agent path.", file=sys.stderr)
+        return 2
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    for w in res["meta_warnings"]:
+        print(f"warning: {w}", file=sys.stderr)
+    for w in res["report"]["warnings"]:
+        print(f"warning: {w}", file=sys.stderr)
+    print(f"Wrote {len(res['written'])} file(s):")
+    for f in res["written"]:
+        print(f"  {f}")
+    ir = res["ir"]
+    print(f"  classes={len(ir['classes'])} dprops={len(ir['datatype_properties'])} "
+          f"oprops={len(ir['object_properties'])} vocabs={len(ir['vocabularies'])}")
+
+    if args.do_eval and not args.apply_from:
+        from dotmd_parser.ontology import eval_ontology as _eval
+        summary = f"{len(ir['classes'])} classes over docs: {ir['meta']['source_docs']}"
+        try:
+            score = _eval(ir, summary, model=args.model)
+            print(f"eval: coverage={score.get('coverage')} "
+                  f"faithfulness={score.get('faithfulness')} — {score.get('notes','')}")
+        except (ValueError, RuntimeError) as e:
+            print(f"warning: eval skipped: {e}", file=sys.stderr)
+
+    if res["report"]["errors"]:
+        for e in res["report"]["errors"]:
+            print(f"error: {e}", file=sys.stderr)
+        if args.check:
+            return 1
+    return 0
+
+
 def cmd_inventory(args: argparse.Namespace) -> int:
     """Report filesystem composition (API-free, no graph needed)."""
     try:
@@ -682,6 +754,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_analyze.set_defaults(func=cmd_analyze)
 
+    p_onto = sub.add_parser("ontology", help="Construct a domain ontology from .md docs")
+    p_onto.add_argument("path", help="Directory to scan")
+    p_onto.add_argument("--emit", help="Comma list of outputs: yml,ttl,md (default: all)")
+    p_onto.add_argument("--out", help="Output dir (default: <path>/ontology)")
+    p_onto.add_argument("--plan", action="store_true",
+                        help="Emit a host-agent prompt pack (no API key needed)")
+    p_onto.add_argument("--apply-from", metavar="JSON", dest="apply_from",
+                        help="Apply a pre-computed extraction JSON (pairs with --plan)")
+    p_onto.add_argument("--dry-run", action="store_true", help="Estimate cost only")
+    p_onto.add_argument("--namespace", help="Ontology namespace IRI")
+    p_onto.add_argument("--prefix", help="Ontology prefix")
+    p_onto.add_argument("--domain", help="Human domain label")
+    p_onto.add_argument("--model", help="Claude model id")
+    p_onto.add_argument("--ext", action="append", help="Extension to include (repeatable)")
+    p_onto.add_argument("--check", action="store_true",
+                        help="Exit non-zero when validation finds errors (CI gate)")
+    p_onto.add_argument("--eval", action="store_true", dest="do_eval",
+                        help="Also run an LLM rubric score (needs API key)")
+    p_onto.set_defaults(func=cmd_ontology)
+
     p_inv = sub.add_parser(
         "inventory",
         help="Filesystem composition report (API-free; extension counts, sizes, markdown ratio)",
@@ -769,7 +861,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:
