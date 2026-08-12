@@ -1,3 +1,4 @@
+import builtins
 import json
 import tempfile
 import unittest
@@ -47,6 +48,17 @@ class TestLoadGraph(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             Q.load_graph(self.root)
 
+    def test_non_dict_ontology_json_falls_back_to_ttl(self):
+        _make_ontology(self.root)
+        # Overwrite ontology.json with a JSON array (non-dict)
+        j = self.root / "ontology" / "ontology.json"
+        j.write_text("[1, 2, 3]", encoding="utf-8")
+        # Should still succeed via ttl @prefix fallback (does not crash, returns namespace)
+        graph, meta = Q.load_graph(self.root)
+        self.assertIn("namespace", meta)
+        self.assertIn("prefix", meta)
+        self.assertTrue(meta["namespace"])  # non-empty string
+
 
 class TestRunSparql(unittest.TestCase):
     def setUp(self):
@@ -72,6 +84,12 @@ class TestRunSparql(unittest.TestCase):
                            "<http://www.w3.org/2002/07/owl#DatatypeProperty> }")
         self.assertEqual(res["type"], "ask")
         self.assertTrue(res["boolean"])
+
+    def test_construct_returns_graph(self):
+        res = Q.run_sparql(self.graph, "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o } LIMIT 1")
+        self.assertEqual(res["type"], "graph")
+        self.assertIsInstance(res["turtle"], str)
+        self.assertTrue(res["turtle"].strip())
 
     def test_select_deterministic(self):
         q = ("SELECT ?p WHERE { ?p a "
@@ -157,9 +175,6 @@ class TestRunQuery(unittest.TestCase):
     def test_exclusive_neither_raises(self):
         with self.assertRaises(ValueError):
             Q.run_query(self.root)
-
-
-import builtins
 
 
 class TestRdflibMissing(unittest.TestCase):

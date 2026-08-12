@@ -50,7 +50,7 @@ def _resolve_meta(base: Path, graph) -> dict:
             m = ir.get("meta", {})
             if m.get("namespace") and m.get("prefix"):
                 return {"namespace": m["namespace"], "prefix": m["prefix"]}
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, AttributeError, TypeError):
             pass
     # 2) fall back to the first non-standard @prefix in the ttl
     for prefix, ns in graph.namespaces():

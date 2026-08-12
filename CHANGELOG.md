@@ -7,7 +7,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - `ontology-query` subcommand: run SPARQL over a built `ontology.ttl` via
-  rdflib (`[rdf]` extra). Raw `--sparql` passthrough (SELECT/ASK/CONSTRUCT)
+  rdflib (`[rdf]` extra). Raw `--sparql` passthrough (SELECT/ASK/CONSTRUCT/DESCRIBE)
   plus named queries (`properties`/`relations`/`defines`/`list`) as
   parameterized SPARQL templates. `--format table|json`, deterministic output.
   Queries the asserted graph only (no inference).
