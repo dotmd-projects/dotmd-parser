@@ -81,6 +81,11 @@ from dotmd_parser.ontology import (
     estimate_cost as _onto_estimate_cost,
 )
 from dotmd_parser.llm import load_dotenv as _onto_load_dotenv
+from dotmd_parser.audit import (
+    run_audit as _run_audit,
+    apply_audit_from_file as _audit_apply_from,
+    format_host_agent_plan as _audit_plan,
+)
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -496,6 +501,45 @@ def cmd_ontology(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ontology_audit(args: argparse.Namespace) -> int:
+    """Audit a built ontology for contradictions and name matches."""
+    if args.plan:
+        try:
+            print(_audit_plan(args.path))
+        except FileNotFoundError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        return 0
+    try:
+        if args.apply_from:
+            res = _audit_apply_from(args.path, args.apply_from, out_dir=args.out)
+        else:
+            if not args.structural_only:
+                _onto_load_dotenv()
+            res = _run_audit(args.path, out_dir=args.out,
+                             structural_only=args.structural_only, model=args.model)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        print("hint: use --plan or --structural-only for the no-API-key path.", file=sys.stderr)
+        return 2
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Wrote {len(res['written'])} file(s):")
+    for f in res["written"]:
+        print(f"  {f}")
+    print(f"  {res['summary']}")
+    for w in res["findings"]["warnings"]:
+        print(f"warning: {w}", file=sys.stderr)
+    if args.check and res["findings"]["contradictions"]:
+        return 1
+    return 0
+
+
 def cmd_inventory(args: argparse.Namespace) -> int:
     """Report filesystem composition (API-free, no graph needed)."""
     try:
@@ -774,6 +818,21 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Also run an LLM rubric score (needs API key)")
     p_onto.set_defaults(func=cmd_ontology)
 
+    p_audit = sub.add_parser("ontology-audit",
+                             help="Audit a built ontology for contradictions + name matches")
+    p_audit.add_argument("path", help="Corpus dir containing ontology/ontology.json")
+    p_audit.add_argument("--out", help="Output dir (default: <path>/ontology)")
+    p_audit.add_argument("--plan", action="store_true",
+                         help="Emit a host-agent prompt pack (no API key)")
+    p_audit.add_argument("--apply-from", metavar="JSON", dest="apply_from",
+                         help="Apply a pre-computed audit JSON")
+    p_audit.add_argument("--structural-only", action="store_true", dest="structural_only",
+                         help="Deterministic structural findings only (no LLM)")
+    p_audit.add_argument("--model", help="Claude model id")
+    p_audit.add_argument("--check", action="store_true",
+                         help="Exit non-zero when a CONFIRMED contradiction exists")
+    p_audit.set_defaults(func=cmd_ontology_audit)
+
     p_inv = sub.add_parser(
         "inventory",
         help="Filesystem composition report (API-free; extension counts, sizes, markdown ratio)",
@@ -861,7 +920,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

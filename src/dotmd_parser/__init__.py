@@ -116,6 +116,14 @@ from dotmd_parser.ontology import (
     emit_design_md,
     validate_ontology,
 )
+from dotmd_parser.audit import (
+    run_audit,
+    structural_findings,
+    namematch_candidates,
+    detect_contradictions,
+    verify_contradictions,
+    adjudicate_namematches,
+)
 
 __all__ = [
     "__version__",
@@ -212,4 +220,11 @@ __all__ = [
     "emit_ttl",
     "emit_design_md",
     "validate_ontology",
+    # audit
+    "run_audit",
+    "structural_findings",
+    "namematch_candidates",
+    "detect_contradictions",
+    "verify_contradictions",
+    "adjudicate_namematches",
 ]
