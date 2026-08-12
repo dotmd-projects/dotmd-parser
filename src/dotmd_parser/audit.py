@@ -192,3 +192,32 @@ def verify_contradictions(candidates, ir, model=None, api_key=None, *, caller=No
             survivors.append({**cand, "verdict": "CONFIRMED",
                               "refutation_checked": verdict.get("reason", "")})
     return survivors
+
+
+def adjudicate_namematches(candidates, ir, corpus, model=None, api_key=None, *, caller=None) -> list[dict]:
+    """Stage 2: LLM name-match adjudication (propose-only).
+
+    For each candidate pair, calls an LLM to decide if they refer to the same entity.
+    Only pairs with decision == "same" are emitted. from/to are set such that:
+    - to = canonical (or cand["a"] if canonical is empty)
+    - from = the other term (whichever is NOT canonical)
+    """
+    api_key = _require_key(api_key, caller)
+    m = _resolve_model(model)
+    template = llm.load_prompt_template("adjudicate-namematch")
+    matches: list[dict] = []
+    for cand in candidates:
+        prompt = (template.replace("{{a}}", str(cand["a"])).replace("{{b}}", str(cand["b"])))
+        first, _, rest = prompt.partition("\n")
+        raw = _call(rest.strip() or prompt, first.strip() or "You adjudicate name matches.",
+                    m, api_key, caller)
+        v = llm.extract_json(raw)
+        if v.get("decision") == "same":
+            canonical = v.get("canonical") or cand["a"]
+            other = cand["b"] if canonical == cand["a"] else cand["a"]
+            matches.append({
+                "from": other, "to": canonical, "canonical": canonical,
+                "confidence": v.get("confidence", 0.0), "rationale": v.get("rationale", ""),
+                "provenance": [],
+            })
+    return matches

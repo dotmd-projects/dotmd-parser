@@ -100,5 +100,22 @@ class TestContradiction(unittest.TestCase):
         self.assertTrue(all(s["verdict"] == "CONFIRMED" for s in survivors))
 
 
+class TestAdjudicate(unittest.TestCase):
+    def test_same_included_uncertain_excluded(self):
+        cands = [{"a": "Google 指名", "b": "GSA指名 即日", "score": 0.7},
+                 {"a": "Meta", "b": "Yahoo!", "score": 0.61}]
+
+        def caller(prompt, system, model):
+            if "GSA" in prompt:
+                return _resp({"decision": "same", "canonical": "Google 指名",
+                              "confidence": 0.86, "rationale": "同一媒体の別表記"})
+            return _resp({"decision": "different", "canonical": "", "confidence": 0.2, "rationale": "別媒体"})
+
+        out = A.adjudicate_namematches(cands, _ir(), [], caller=caller)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["canonical"], "Google 指名")
+        self.assertEqual(out[0]["to"], "Google 指名")
+
+
 if __name__ == "__main__":
     unittest.main()
