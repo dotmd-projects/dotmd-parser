@@ -185,5 +185,20 @@ class TestHostAgent(unittest.TestCase):
         tmp.cleanup()
 
 
+class TestAuditDeterminism(unittest.TestCase):
+    def test_structural_and_emit_deterministic(self):
+        findings = {"meta": {"audited": "ontology/ontology.json", "corpus": "c",
+                    "generated_by": "t"},
+                    "structural": [{"kind": "vocab-overlap", "detail": "d", "provenance": ["a.md"]}],
+                    "contradictions": [], "name_matches": [], "open_questions": [], "warnings": []}
+        self.assertEqual(A.emit_audit_json(findings), A.emit_audit_json(findings))
+        self.assertEqual(A.emit_audit_md(findings), A.emit_audit_md(findings))
+
+    def test_namematch_candidates_stable_order(self):
+        ir = _ir(vocabularies=[{"name": "m", "values": ["Google 指名", "GSA指名 即日", "Google 一般"],
+                                "provenance": ["a.md"]}])
+        self.assertEqual(A.namematch_candidates(ir), A.namematch_candidates(ir))
+
+
 if __name__ == "__main__":
     unittest.main()

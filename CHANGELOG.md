@@ -6,6 +6,15 @@ follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `ontology-audit` subcommand: active integrity audit over a built ontology.
+  Detects contradictions (detect → adversarial verify, suppressing
+  structurally-normal false positives), proposes name matches (difflib
+  candidates → LLM adjudication, propose-only), and reports deterministic
+  structural findings. Emits ontology-audit.{md,json}; never mutates
+  ontology.yml. Host-agent mode (`--plan`/`--apply-from`), `--structural-only`
+  (deterministic, no API), `--check` CI gate.
+- `write_ontology` now also emits `ontology.json` (the canonical IR) so the
+  audit can load the exact built ontology.
 - **`ontology` subcommand** — text-first domain ontology construction from a
   folder of `.md` analysis docs. Extracts per-document, merges with
   dedup/provenance/first-seen-wins conflict flagging, and emits
