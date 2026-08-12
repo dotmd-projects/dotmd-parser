@@ -124,6 +124,12 @@ from dotmd_parser.audit import (
     verify_contradictions,
     adjudicate_namematches,
 )
+from dotmd_parser.query import (
+    run_query,
+    run_sparql,
+    named_query,
+    load_graph,
+)
 
 __all__ = [
     "__version__",
@@ -227,4 +233,9 @@ __all__ = [
     "detect_contradictions",
     "verify_contradictions",
     "adjudicate_namematches",
+    # query
+    "run_query",
+    "run_sparql",
+    "named_query",
+    "load_graph",
 ]

@@ -86,6 +86,7 @@ from dotmd_parser.audit import (
     apply_audit_from_file as _audit_apply_from,
     format_host_agent_plan as _audit_plan,
 )
+from dotmd_parser.query import run_query as _run_query
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -540,6 +541,27 @@ def cmd_ontology_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ontology_query(args: argparse.Namespace) -> int:
+    """Run SPARQL (raw or named) over a built ontology.ttl."""
+    try:
+        out = _run_query(args.path, sparql=args.sparql, kind=args.kind,
+                         arg=args.arg, fmt=args.format)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:        # mode exclusivity / bad arg / unknown kind
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except RuntimeError as e:      # rdflib missing / namespace unresolved
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:         # malformed SPARQL (rdflib parse/eval errors)
+        print(f"error: SPARQL failed: {e}", file=sys.stderr)
+        return 1
+    print(out)
+    return 0
+
+
 def cmd_inventory(args: argparse.Namespace) -> int:
     """Report filesystem composition (API-free, no graph needed)."""
     try:
@@ -833,6 +855,18 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="Exit non-zero when a CONFIRMED contradiction exists")
     p_audit.set_defaults(func=cmd_ontology_audit)
 
+    p_query = sub.add_parser("ontology-query",
+                             help="Run SPARQL over a built ontology.ttl (needs [rdf])")
+    p_query.add_argument("path", help="Corpus dir containing ontology/ontology.ttl")
+    p_query.add_argument("kind", nargs="?",
+                         choices=["properties", "relations", "defines", "list"],
+                         help="Named query kind (omit when using --sparql)")
+    p_query.add_argument("arg", nargs="?", help="Argument for the named query")
+    p_query.add_argument("--sparql", help="Raw SPARQL query (mutually exclusive with a named query)")
+    p_query.add_argument("--format", choices=["table", "json"], default="table",
+                         help="Output format (default: table)")
+    p_query.set_defaults(func=cmd_ontology_query)
+
     p_inv = sub.add_parser(
         "inventory",
         help="Filesystem composition report (API-free; extension counts, sizes, markdown ratio)",
@@ -920,7 +954,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit", "ontology-query"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:
