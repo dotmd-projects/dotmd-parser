@@ -9,6 +9,22 @@ def _ir(**over):
     return base
 
 
+class TestNameMatch(unittest.TestCase):
+    def test_similar_pair_candidate_unrelated_excluded(self):
+        ir = _ir(vocabularies=[{"name": "media",
+                                "values": ["Google 指名", "GSA指名 即日", "買取"],
+                                "provenance": ["a.md"]}])
+        cands = A.namematch_candidates(ir)
+        pairs = {frozenset((c["a"], c["b"])) for c in cands}
+        self.assertIn(frozenset(("Google 指名", "GSA指名 即日")), pairs)  # near-duplicate surfaced
+        self.assertNotIn(frozenset(("Google 指名", "買取")), pairs)       # unrelated excluded
+
+    def test_deterministic(self):
+        ir = _ir(vocabularies=[{"name": "m", "values": ["Google 指名", "GSA指名 即日"],
+                                "provenance": ["a.md"]}])
+        self.assertEqual(A.namematch_candidates(ir), A.namematch_candidates(ir))
+
+
 class TestStructural(unittest.TestCase):
     def test_merge_conflict_promoted(self):
         ir = _ir(conflicts=[{"kind": "naming", "detail": "feeRate.type: decimal vs string",

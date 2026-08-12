@@ -7,6 +7,7 @@ ontology.yml.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from pathlib import Path
@@ -76,3 +77,40 @@ def structural_findings(ir: dict) -> list[dict]:
             })
 
     return findings
+
+
+NAMEMATCH_THRESHOLD = 0.35
+
+
+def _surface_terms(ir: dict) -> list[str]:
+    terms: list[str] = []
+    for v in ir["vocabularies"]:
+        terms.extend(v.get("values", []))
+    for c in ir["classes"]:
+        terms.append(c["name"])
+        if c.get("label_ja"):
+            terms.append(c["label_ja"])
+    # dedup, stable order
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in terms:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def namematch_candidates(ir: dict, threshold: float = NAMEMATCH_THRESHOLD) -> list[dict]:
+    """Deterministic near-duplicate term pairs via difflib ratio on normalized text."""
+    terms = _surface_terms(ir)
+    cands: list[dict] = []
+    for i in range(len(terms)):
+        for j in range(i + 1, len(terms)):
+            a, b = terms[i], terms[j]
+            if _norm(a) == _norm(b):
+                continue
+            score = difflib.SequenceMatcher(None, _norm(a), _norm(b)).ratio()
+            if score >= threshold:
+                cands.append({"a": a, "b": b, "score": round(score, 3)})
+    cands.sort(key=lambda c: (-c["score"], c["a"], c["b"]))
+    return cands
