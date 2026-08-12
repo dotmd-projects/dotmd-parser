@@ -79,7 +79,7 @@ def structural_findings(ir: dict) -> list[dict]:
     return findings
 
 
-NAMEMATCH_THRESHOLD = 0.35
+NAMEMATCH_THRESHOLD = 0.6
 
 
 def _surface_terms(ir: dict) -> list[str]:
@@ -100,6 +100,20 @@ def _surface_terms(ir: dict) -> list[str]:
     return out
 
 
+def _significant_common_substring(a: str, b: str) -> bool:
+    """True if a and b share a meaningful contiguous substring (>=2 CJK chars
+    or >=4 ASCII chars), so CJK label variants surface even at low difflib ratio."""
+    na, nb = _norm(a), _norm(b)
+    match = difflib.SequenceMatcher(None, na, nb).find_longest_match(0, len(na), 0, len(nb))
+    sub = na[match.a:match.a + match.size].strip()
+    if not sub:
+        return False
+    cjk = sum(1 for ch in sub if ord(ch) >= 0x3040)
+    if cjk >= 2:
+        return True
+    return len(sub) >= 4 and sub.isascii()
+
+
 def namematch_candidates(ir: dict, threshold: float = NAMEMATCH_THRESHOLD) -> list[dict]:
     """Deterministic near-duplicate term pairs via difflib ratio on normalized text."""
     terms = _surface_terms(ir)
@@ -110,7 +124,7 @@ def namematch_candidates(ir: dict, threshold: float = NAMEMATCH_THRESHOLD) -> li
             if _norm(a) == _norm(b):
                 continue
             score = difflib.SequenceMatcher(None, _norm(a), _norm(b)).ratio()
-            if score >= threshold:
+            if score >= threshold or _significant_common_substring(a, b):
                 cands.append({"a": a, "b": b, "score": round(score, 3)})
     cands.sort(key=lambda c: (-c["score"], c["a"], c["b"]))
     return cands

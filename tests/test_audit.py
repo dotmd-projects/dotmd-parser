@@ -16,8 +16,8 @@ class TestNameMatch(unittest.TestCase):
                                 "provenance": ["a.md"]}])
         cands = A.namematch_candidates(ir)
         pairs = {frozenset((c["a"], c["b"])) for c in cands}
-        self.assertIn(frozenset(("Google 指名", "GSA指名 即日")), pairs)  # near-duplicate surfaced
-        self.assertNotIn(frozenset(("Google 指名", "買取")), pairs)       # unrelated excluded
+        self.assertIn(frozenset(("Google 指名", "GSA指名 即日")), pairs)  # surfaced via shared "指名" substring
+        self.assertNotIn(frozenset(("Google 指名", "買取")), pairs)       # unrelated excluded (no significant overlap)
 
     def test_deterministic(self):
         ir = _ir(vocabularies=[{"name": "m", "values": ["Google 指名", "GSA指名 即日"],
