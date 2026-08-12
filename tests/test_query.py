@@ -131,5 +131,33 @@ class TestNamedQuery(unittest.TestCase):
             Q.named_query(self.graph, self.meta, "bogus", "x")
 
 
+class TestRunQuery(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _make_ontology(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_named_table(self):
+        out = Q.run_query(self.root, kind="list", arg="classes", fmt="table")
+        self.assertIn("Application", out)
+
+    def test_sparql_json(self):
+        out = Q.run_query(self.root, sparql="SELECT ?c WHERE { ?c a "
+                          "<http://www.w3.org/2002/07/owl#Class> }", fmt="json")
+        data = json.loads(out)
+        self.assertTrue(any("Application" in str(row) for row in data))
+
+    def test_exclusive_both_raises(self):
+        with self.assertRaises(ValueError):
+            Q.run_query(self.root, sparql="ASK {}", kind="list", arg="classes")
+
+    def test_exclusive_neither_raises(self):
+        with self.assertRaises(ValueError):
+            Q.run_query(self.root)
+
+
 if __name__ == "__main__":
     unittest.main()

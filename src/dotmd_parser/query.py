@@ -141,3 +141,35 @@ def named_query(graph, meta: dict, kind: str, arg: str) -> dict:
         body = _NAMED_TEMPLATES[kind].format(arg=arg)
 
     return run_sparql(graph, _prefix_block(meta) + body)
+
+
+def format_result(result: dict, fmt: str = "table") -> str:
+    """Format a query result as table (default) or JSON."""
+    if fmt == "json":
+        if result["type"] == "ask":
+            return json.dumps({"boolean": result["boolean"]})
+        if result["type"] == "graph":
+            return json.dumps({"turtle": result["turtle"]}, ensure_ascii=False)
+        rows = [dict(zip(result["columns"], r)) for r in result["rows"]]
+        return json.dumps(rows, ensure_ascii=False, indent=2)
+
+    # table
+    if result["type"] == "ask":
+        return "true" if result["boolean"] else "false"
+    if result["type"] == "graph":
+        return result["turtle"]
+    lines = ["\t".join(result["columns"])]
+    lines += ["\t".join(r) for r in result["rows"]]
+    return "\n".join(lines)
+
+
+def run_query(directory, *, sparql=None, kind=None, arg=None, fmt="table") -> str:
+    """Load graph, dispatch to run_sparql or named_query, and format result.
+
+    Enforces mode exclusivity: exactly one of sparql or kind must be provided.
+    """
+    if bool(sparql) == bool(kind):
+        raise ValueError("provide exactly one of --sparql or a named query (kind)")
+    graph, meta = load_graph(directory)
+    result = run_sparql(graph, sparql) if sparql else named_query(graph, meta, kind, arg)
+    return format_result(result, fmt)
