@@ -59,3 +59,29 @@ def _resolve_meta(base: Path, graph) -> dict:
         "Could not resolve the ontology namespace. Ensure ontology.json exists "
         "(dotmd-parser ontology emits it) or the ttl declares a custom @prefix."
     )
+
+
+def run_sparql(graph, query: str) -> dict:
+    """Execute a SPARQL query; shape the result by its type."""
+    result = graph.query(query)
+    rtype = str(result.type).upper()  # SELECT | ASK | CONSTRUCT | DESCRIBE
+    out = {"type": "select", "columns": [], "rows": [], "boolean": False, "turtle": ""}
+
+    if rtype == "ASK":
+        out["type"] = "ask"
+        out["boolean"] = bool(result.askAnswer)
+        return out
+    if rtype in ("CONSTRUCT", "DESCRIBE"):
+        out["type"] = "graph"
+        out["turtle"] = result.graph.serialize(format="turtle")
+        return out
+
+    # SELECT
+    columns = [str(v) for v in result.vars]
+    rows = []
+    for binding in result:
+        rows.append([("" if binding[v] is None else str(binding[v])) for v in result.vars])
+    rows.sort(key=lambda r: tuple(r))   # deterministic order
+    out["columns"] = columns
+    out["rows"] = rows
+    return out

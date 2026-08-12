@@ -48,5 +48,37 @@ class TestLoadGraph(unittest.TestCase):
             Q.load_graph(self.root)
 
 
+class TestRunSparql(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _make_ontology(self.root)
+        self.graph, self.meta = Q.load_graph(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_select(self):
+        res = Q.run_sparql(self.graph, "SELECT ?c WHERE { ?c a "
+                           "<http://www.w3.org/2002/07/owl#Class> }")
+        self.assertEqual(res["type"], "select")
+        self.assertEqual(res["columns"], ["c"])
+        flat = [cell for row in res["rows"] for cell in row]
+        self.assertIn("https://ex.org/o#Application", flat)
+
+    def test_ask(self):
+        res = Q.run_sparql(self.graph,
+                           "ASK { <https://ex.org/o#feeRate> a "
+                           "<http://www.w3.org/2002/07/owl#DatatypeProperty> }")
+        self.assertEqual(res["type"], "ask")
+        self.assertTrue(res["boolean"])
+
+    def test_select_deterministic(self):
+        q = ("SELECT ?p WHERE { ?p a "
+             "<http://www.w3.org/2002/07/owl#ObjectProperty> }")
+        self.assertEqual(Q.run_sparql(self.graph, q)["rows"],
+                         Q.run_sparql(self.graph, q)["rows"])
+
+
 if __name__ == "__main__":
     unittest.main()
