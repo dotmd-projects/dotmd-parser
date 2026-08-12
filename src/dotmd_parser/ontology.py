@@ -402,7 +402,7 @@ def validate_ontology(ir: dict, ttl: str | None = None) -> dict:
     return {"errors": errors, "warnings": warnings}
 
 
-_EMIT_FILE = {"yml": "ontology.yml", "ttl": "ontology.ttl", "md": "ontology-design.md"}
+_EMIT_FILE = {"yml": "ontology.yml", "ttl": "ontology.ttl", "md": "ontology-design.md", "json": "ontology.json"}
 
 
 def _slug(name: str) -> str:
@@ -424,12 +424,15 @@ def infer_meta(directory, namespace=None, prefix=None, domain=None, source_docs=
     return meta, warnings
 
 
-def write_ontology(ir, out_dir, emit=("yml", "ttl", "md")) -> list[str]:
+def write_ontology(ir, out_dir, emit=("yml", "ttl", "md", "json")) -> list[str]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    renderers = {"yml": emit_yaml, "ttl": emit_ttl, "md": emit_design_md}
+    renderers = {
+        "yml": emit_yaml, "ttl": emit_ttl, "md": emit_design_md,
+        "json": lambda i: json.dumps(i, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
+    }
     written: list[str] = []
-    for kind in ("yml", "ttl", "md"):
+    for kind in ("yml", "ttl", "md", "json"):
         if kind in emit:
             path = out / _EMIT_FILE[kind]
             path.write_text(renderers[kind](ir), encoding="utf-8")
@@ -437,7 +440,7 @@ def write_ontology(ir, out_dir, emit=("yml", "ttl", "md")) -> list[str]:
     return written
 
 
-def build_ontology(directory, out_dir=None, emit=("yml", "ttl", "md"), *,
+def build_ontology(directory, out_dir=None, emit=("yml", "ttl", "md", "json"), *,
                    namespace=None, prefix=None, domain=None,
                    api_key=None, extensions=None, model=None, caller=None) -> dict:
     partials = extract_ontology(directory, api_key=api_key, extensions=extensions,
@@ -476,7 +479,7 @@ def format_host_agent_plan(directory, extensions=None) -> str:
 
 
 def apply_ontology_from_file(directory, json_path, out_dir=None,
-                             emit=("yml", "ttl", "md"),
+                             emit=("yml", "ttl", "md", "json"),
                              namespace=None, prefix=None, domain=None) -> dict:
     path = Path(json_path)
     if not path.exists():

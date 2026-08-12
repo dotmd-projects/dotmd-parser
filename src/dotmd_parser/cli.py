@@ -436,7 +436,7 @@ def cmd_ontology(args: argparse.Namespace) -> int:
     extensions = None
     if args.ext:
         extensions = [(e if e.startswith(".") else f".{e}") for e in args.ext]
-    emit = tuple(args.emit.split(",")) if args.emit else ("yml", "ttl", "md")
+    emit = tuple(args.emit.split(",")) if args.emit else ("yml", "ttl", "md", "json")
 
     if args.dry_run:
         est = _onto_estimate_cost(args.path, model=args.model, extensions=extensions)
@@ -756,7 +756,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_onto = sub.add_parser("ontology", help="Construct a domain ontology from .md docs")
     p_onto.add_argument("path", help="Directory to scan")
-    p_onto.add_argument("--emit", help="Comma list of outputs: yml,ttl,md (default: all)")
+    p_onto.add_argument("--emit", help="Comma list of outputs: yml,ttl,md,json (default: all)")
     p_onto.add_argument("--out", help="Output dir (default: <path>/ontology)")
     p_onto.add_argument("--plan", action="store_true",
                         help="Emit a host-agent prompt pack (no API key needed)")
