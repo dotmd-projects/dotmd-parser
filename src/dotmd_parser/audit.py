@@ -336,3 +336,54 @@ def format_audit_summary(findings: dict) -> str:
             f"name_matches={len(findings['name_matches'])} "
             f"open_questions={len(findings['open_questions'])} "
             f"warnings={len(findings['warnings'])}")
+
+
+def format_host_agent_plan(directory) -> str:
+    """Pack a no-API-key host-agent plan with embedded prompts and --apply-from reference."""
+    root = Path(directory).resolve()
+    det = llm.load_prompt_template("detect-contradictions")
+    ver = llm.load_prompt_template("verify-contradiction")
+    adj = llm.load_prompt_template("adjudicate-namematch")
+    return (
+        "# dotmd-parser — ontology-audit host-agent plan\n\n"
+        f"Target: `{root}`  (reads `ontology/ontology.json`, scans corpus)\n\n"
+        "Run the three tasks below yourself, then assemble a JSON object "
+        '`{"contradictions": [...verified CONFIRMED...], "name_matches": [...same only...], '
+        '"open_questions": [...]}`  and apply it:\n\n'
+        "```bash\n"
+        f'dotmd-parser ontology-audit "{root}" --apply-from audit.json\n'
+        "```\n\n"
+        "## 1. Detect contradictions\n\n```\n" + det.strip() + "\n```\n\n"
+        "## 2. Verify each (skeptic; default refuted=true)\n\n```\n" + ver.strip() + "\n```\n\n"
+        "## 3. Adjudicate name matches (keep only decision=same)\n\n```\n" + adj.strip() + "\n```\n"
+    )
+
+
+def apply_audit_from_file(directory, json_path, out_dir=None) -> dict:
+    """Load pre-computed findings from JSON and generate audit report."""
+    ir = load_ir(directory)
+    path = Path(json_path)
+    if not path.exists():
+        raise FileNotFoundError(f"audit JSON not found: {json_path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"invalid JSON in {json_path}: {e}") from e
+
+    contradictions = [{**c, "verdict": "CONFIRMED"} for c in payload.get("contradictions", [])]
+    findings = {
+        "meta": {"audited": "ontology/ontology.json", "corpus": str(directory),
+                 "generated_by": "dotmd-parser ontology-audit v2"},
+        "structural": structural_findings(ir),
+        "contradictions": sorted(contradictions, key=_severity_key),
+        "name_matches": payload.get("name_matches", []),
+        "open_questions": payload.get("open_questions", []),
+        "warnings": [],
+    }
+    out = Path(out_dir) if out_dir else (Path(directory).resolve() / "ontology")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / _AUDIT_JSON).write_text(emit_audit_json(findings), encoding="utf-8")
+    (out / _AUDIT_MD).write_text(emit_audit_md(findings), encoding="utf-8")
+    return {"findings": findings,
+            "written": [str(out / _AUDIT_JSON), str(out / _AUDIT_MD)],
+            "summary": format_audit_summary(findings)}

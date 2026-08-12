@@ -164,5 +164,26 @@ class TestRunAudit(unittest.TestCase):
         tmp.cleanup()
 
 
+class TestHostAgent(unittest.TestCase):
+    def test_plan_mentions_apply_from(self):
+        tmp, root = TestRunAudit()._prep()
+        plan = A.format_host_agent_plan(root)
+        self.assertIn("--apply-from", plan)
+        tmp.cleanup()
+
+    def test_apply_from_builds_report(self):
+        tmp, root = TestRunAudit()._prep()
+        payload = {"contradictions": [{"claim": "審査<申請", "violates": "審査CV≥申請CV",
+                   "severity": "high", "verdict": "CONFIRMED", "refutation_checked": "ok",
+                   "evidence": ["B-1c.md"]}],
+                   "name_matches": [], "open_questions": []}
+        jp = root / "audit-in.json"
+        jp.write_text(_json2.dumps(payload), encoding="utf-8")
+        res = A.apply_audit_from_file(root, jp)
+        self.assertEqual(len(res["findings"]["contradictions"]), 1)
+        self.assertTrue(any(Path(p).name == "ontology-audit.md" for p in res["written"]))
+        tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
