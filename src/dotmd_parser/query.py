@@ -85,3 +85,58 @@ def run_sparql(graph, query: str) -> dict:
     out["columns"] = columns
     out["rows"] = rows
     return out
+
+
+_BAD_ARG_CHARS = set(' \t\n{}<>"')
+
+_NAMED_TEMPLATES = {
+    "properties": (
+        "SELECT ?p ?kind ?range WHERE {{ ?p rdfs:domain ns:{arg} . "
+        "{{ ?p a owl:DatatypeProperty BIND(\"datatype\" AS ?kind) }} UNION "
+        "{{ ?p a owl:ObjectProperty BIND(\"object\" AS ?kind) }} "
+        "OPTIONAL {{ ?p rdfs:range ?range }} }}"
+    ),
+    "relations": (
+        "SELECT ?p ?domain ?range WHERE {{ ?p a owl:ObjectProperty ; "
+        "rdfs:domain ?domain ; rdfs:range ?range . "
+        "FILTER(?domain = ns:{arg} || ?range = ns:{arg}) }}"
+    ),
+    "defines": "SELECT ?doc WHERE {{ ns:{arg} ns:sourceDoc ?doc }}",
+    "list": None,  # handled specially (arg selects the enumeration)
+}
+
+_LIST_TEMPLATES = {
+    "classes": "SELECT ?c WHERE { ?c a owl:Class }",
+    "properties": ("SELECT ?p ?kind WHERE { "
+                   "{ ?p a owl:DatatypeProperty BIND(\"datatype\" AS ?kind) } UNION "
+                   "{ ?p a owl:ObjectProperty BIND(\"object\" AS ?kind) } }"),
+    "vocabularies": "SELECT ?v WHERE { ?v a skos:ConceptScheme }",
+}
+
+
+def _prefix_block(meta: dict) -> str:
+    return (
+        f"PREFIX ns: <{meta['namespace']}> "
+        "PREFIX owl: <http://www.w3.org/2002/07/owl#> "
+        "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+        "PREFIX skos: <http://www.w3.org/2004/02/skos/core#> "
+    )
+
+
+def named_query(graph, meta: dict, kind: str, arg: str) -> dict:
+    if kind not in _NAMED_TEMPLATES:
+        raise ValueError(f"unknown query kind: {kind} "
+                         f"(choose from {sorted(_NAMED_TEMPLATES)})")
+    if not arg:
+        raise ValueError(f"query '{kind}' requires an argument")
+    if set(arg) & _BAD_ARG_CHARS:
+        raise ValueError(f"invalid characters in argument: {arg!r}")
+
+    if kind == "list":
+        body = _LIST_TEMPLATES.get(arg)
+        if body is None:
+            raise ValueError("list requires one of: classes, properties, vocabularies")
+    else:
+        body = _NAMED_TEMPLATES[kind].format(arg=arg)
+
+    return run_sparql(graph, _prefix_block(meta) + body)

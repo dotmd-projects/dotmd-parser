@@ -80,5 +80,51 @@ class TestRunSparql(unittest.TestCase):
                          Q.run_sparql(self.graph, q)["rows"])
 
 
+class TestNamedQuery(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _make_ontology(self.root)
+        self.graph, self.meta = Q.load_graph(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _flat(self, res):
+        return [cell for row in res["rows"] for cell in row]
+
+    def test_properties(self):
+        res = Q.named_query(self.graph, self.meta, "properties", "Application")
+        flat = self._flat(res)
+        self.assertTrue(any("feeRate" in c for c in flat))
+        self.assertTrue(any("evaluatedBy" in c for c in flat))
+
+    def test_relations(self):
+        res = Q.named_query(self.graph, self.meta, "relations", "Application")
+        self.assertTrue(any("evaluatedBy" in c for c in self._flat(res)))
+
+    def test_defines(self):
+        res = Q.named_query(self.graph, self.meta, "defines", "feeRate")
+        self.assertTrue(any("src.md" in c for c in self._flat(res)))
+
+    def test_list_classes(self):
+        res = Q.named_query(self.graph, self.meta, "list", "classes")
+        flat = self._flat(res)
+        self.assertTrue(any("Application" in c for c in flat))
+        self.assertTrue(any("CreditAssessment" in c for c in flat))
+
+    def test_undefined_class_empty(self):
+        res = Q.named_query(self.graph, self.meta, "properties", "Nonexistent")
+        self.assertEqual(res["rows"], [])          # zero rows, no error
+
+    def test_bad_arg_raises(self):
+        with self.assertRaises(ValueError):
+            Q.named_query(self.graph, self.meta, "properties", "Bad Name")
+
+    def test_unknown_kind_raises(self):
+        with self.assertRaises(ValueError):
+            Q.named_query(self.graph, self.meta, "bogus", "x")
+
+
 if __name__ == "__main__":
     unittest.main()
