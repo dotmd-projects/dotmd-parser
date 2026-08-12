@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import re
 from pathlib import Path
 
+from dotmd_parser import llm
 from dotmd_parser.ontology import _norm
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
@@ -128,3 +130,65 @@ def namematch_candidates(ir: dict, threshold: float = NAMEMATCH_THRESHOLD) -> li
                 cands.append({"a": a, "b": b, "score": round(score, 3)})
     cands.sort(key=lambda c: (-c["score"], c["a"], c["b"]))
     return cands
+
+
+def _resolve_model(model: str | None) -> str:
+    return model or os.environ.get("CLAUDE_MODEL", llm.DEFAULT_MODEL)
+
+
+def _require_key(api_key: str | None, caller) -> str | None:
+    if api_key is None:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if caller is None and not api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY is not set. Export it, or use --plan / --structural-only."
+        )
+    return api_key
+
+
+def _call(prompt: str, system: str, model: str, api_key, caller):
+    return caller(prompt, system, model) if caller else llm.call_claude(prompt, system, api_key, model)
+
+
+def _ontology_summary(ir: dict) -> str:
+    inv = "\n".join(f"- {i.get('id','?')}: {i.get('statement','')}" for i in ir["invariants"])
+    classes = ", ".join(c["name"] for c in ir["classes"])
+    return f"classes: {classes}\ninvariants:\n{inv}"
+
+
+def detect_contradictions(ir, corpus, model=None, api_key=None, *, caller=None) -> dict:
+    """Stage 1: propose candidate contradictions between ontology and corpus."""
+    api_key = _require_key(api_key, caller)
+    m = _resolve_model(model)
+    template = llm.load_prompt_template("detect-contradictions")
+    corpus_block = "\n\n".join(f"### {d['path']}\n{d['content']}" for d in corpus)
+    prompt = (template.replace("{{ontology_summary}}", _ontology_summary(ir))
+                      .replace("{{corpus}}", corpus_block))
+    first, _, rest = prompt.partition("\n")
+    raw = _call(rest.strip() or prompt, first.strip() or "You detect contradictions.", m, api_key, caller)
+    parsed = llm.extract_json(raw)
+    return {"candidates": parsed.get("candidates", []),
+            "open_questions": parsed.get("open_questions", [])}
+
+
+def verify_contradictions(candidates, ir, model=None, api_key=None, *, caller=None) -> list[dict]:
+    """Stage 2: adversarial skeptic — refute what's explainable by ontology structure.
+
+    Only refuted=False survivors are kept; a missing/omitted refuted key
+    defaults to True (dropped) so an ambiguous verdict never false-positives.
+    """
+    api_key = _require_key(api_key, caller)
+    m = _resolve_model(model)
+    template = llm.load_prompt_template("verify-contradiction")
+    context = _ontology_summary(ir)
+    survivors: list[dict] = []
+    for cand in candidates:
+        prompt = (template.replace("{{candidate}}", json.dumps(cand, ensure_ascii=False))
+                          .replace("{{context}}", context))
+        first, _, rest = prompt.partition("\n")
+        raw = _call(rest.strip() or prompt, first.strip() or "You are a skeptic.", m, api_key, caller)
+        verdict = llm.extract_json(raw)
+        if not verdict.get("refuted", True):   # default refuted=True when missing
+            survivors.append({**cand, "verdict": "CONFIRMED",
+                              "refutation_checked": verdict.get("reason", "")})
+    return survivors

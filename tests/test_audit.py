@@ -53,5 +53,52 @@ class TestStructural(unittest.TestCase):
         self.assertEqual(A.structural_findings(ir), A.structural_findings(ir))
 
 
+import json as _json
+
+
+def _resp(obj):
+    return "```json\n" + _json.dumps(obj) + "\n```"
+
+
+class TestContradiction(unittest.TestCase):
+    def _ir_funnel(self):
+        return _ir(
+            classes=[{"name": "ConversionEvent", "label_ja": "CVイベント", "domain_group": "マーケ",
+                      "provenance": ["f.md"]}],
+            invariants=[{"id": "review-ge-application",
+                         "statement": "審査は申請ごと→審査CV≥申請CV", "kind": "constraint",
+                         "provenance": ["f.md"]}])
+
+    def test_detect_returns_candidates_and_open_questions(self):
+        def caller(prompt, system, model):
+            return _resp({"candidates": [
+                {"claim": "審査CV(681) < 申請CV(1290)", "violates": "審査CV≥申請CV",
+                 "severity": "high", "evidence": ["B-1c.md"]}],
+                "open_questions": [{"text": "審査CVの正確な定義", "provenance": ["B-1c.md"]}]})
+        det = A.detect_contradictions(self._ir_funnel(),
+                                      [{"path": "B-1c.md", "content": "審査681 申請1290"}],
+                                      caller=caller)
+        self.assertEqual(len(det["candidates"]), 1)
+        self.assertEqual(len(det["open_questions"]), 1)
+
+    def test_verify_confirms_real_and_drops_structurally_normal(self):
+        real = {"claim": "審査CV(681) < 申請CV(1290)", "violates": "審査CV≥申請CV",
+                "severity": "high", "evidence": ["B-1c.md"]}
+        false = {"claim": "メアド登録CV(957) < 申請CV(1290)", "violates": "?",
+                 "severity": "medium", "evidence": ["f.md"]}
+
+        def caller(prompt, system, model):
+            # skeptic: refute the structurally-normal one, keep the real one
+            if "メアド" in prompt:
+                return _resp({"refuted": True, "reason": "stageScope 初回のみ vs 初回+リピで正常"})
+            return _resp({"refuted": False, "reason": "構造差で説明不可"})
+
+        survivors = A.verify_contradictions([real, false], self._ir_funnel(), caller=caller)
+        claims = [s["claim"] for s in survivors]
+        self.assertIn(real["claim"], claims)          # real contradiction CONFIRMED
+        self.assertNotIn(false["claim"], claims)      # structurally-normal dropped
+        self.assertTrue(all(s["verdict"] == "CONFIRMED" for s in survivors))
+
+
 if __name__ == "__main__":
     unittest.main()
