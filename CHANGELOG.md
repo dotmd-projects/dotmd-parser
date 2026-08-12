@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `ontology-query` subcommand: run SPARQL over a built `ontology.ttl` via
+  rdflib (`[rdf]` extra). Raw `--sparql` passthrough (SELECT/ASK/CONSTRUCT/DESCRIBE)
+  plus named queries (`properties`/`relations`/`defines`/`list`) as
+  parameterized SPARQL templates. `--format table|json`, deterministic output.
+  Queries the asserted graph only (no inference).
 - `ontology-audit` subcommand: active integrity audit over a built ontology.
   Detects contradictions (detect → adversarial verify, suppressing
   structurally-normal false positives), proposes name matches (difflib
