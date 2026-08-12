@@ -612,6 +612,62 @@ This is v2 of the ontology tooling: an active integrity audit, not a query
 layer — there's still no SPARQL or similar query interface over the
 ontology (that remains future work).
 
+## `ontology-query` — SPARQL over a built ontology
+
+Once `dotmd-parser ontology ./corpus/` has produced `ontology.ttl` (and
+`ontology.json`, used to resolve the ontology's namespace/prefix), query it
+with SPARQL. This requires the `rdf` extra:
+
+```bash
+pip install 'dotmd-parser[rdf]'
+```
+
+Raw SPARQL passthrough:
+
+```bash
+dotmd-parser ontology-query ./corpus/ --sparql \
+  "SELECT ?c WHERE { ?c a <http://www.w3.org/2002/07/owl#Class> }"
+
+dotmd-parser ontology-query ./corpus/ --sparql \
+  "ASK { ex:Application ex:evaluatedBy ?x }"
+```
+
+The result is shaped by query type: `SELECT` returns rows, `ASK` returns a
+boolean, and `CONSTRUCT`/`DESCRIBE` return serialized Turtle.
+
+Named queries — parameterized SPARQL templates for the ontology's own
+vocabulary prefix, so you don't have to write PREFIX declarations or class
+IRIs by hand:
+
+```bash
+dotmd-parser ontology-query ./corpus/ properties Application
+dotmd-parser ontology-query ./corpus/ relations Application
+dotmd-parser ontology-query ./corpus/ defines feeRate
+dotmd-parser ontology-query ./corpus/ list classes
+dotmd-parser ontology-query ./corpus/ list properties
+dotmd-parser ontology-query ./corpus/ list vocabularies
+```
+
+- `properties <Class>` — datatype/object properties whose domain is
+  `<Class>`, with their kind and (when declared) range.
+- `relations <Class>` — object properties where `<Class>` appears as either
+  domain or range.
+- `defines <name>` — the source document(s) that introduced `<name>`.
+- `list classes|properties|vocabularies` — enumerate all classes, all
+  properties, or all SKOS concept schemes in the graph.
+
+`--format table|json` controls output shape (default: `table`, tab-separated
+with a header row for `SELECT` results). Rows are sorted for deterministic
+output on repeated runs.
+
+```bash
+dotmd-parser ontology-query ./corpus/ defines feeRate --format json
+```
+
+Note: this queries the *asserted* graph only — there is no OWL reasoner or
+inference step (e.g. subclass/subproperty entailment is not materialized).
+Adding an inference layer remains future work.
+
 ## Claude Code Skill integration
 
 A ready-to-use Claude Code Skill is bundled with the package at

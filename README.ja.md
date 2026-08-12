@@ -531,6 +531,61 @@ dotmd-parser ontology-audit ./corpus/ --model claude-... --out ./corpus/ontology
 クエリレイヤーではありません — SPARQL 等のクエリインターフェースは
 まだ存在しません（将来の課題です）。
 
+## `ontology-query` — ビルド済みオントロジーへの SPARQL クエリ
+
+`dotmd-parser ontology ./corpus/` が `ontology.ttl`（および、オントロジーの
+namespace/prefix 解決に使う `ontology.json`）を生成したあと、それを SPARQL
+でクエリできます。`rdf` extra が必要です:
+
+```bash
+pip install 'dotmd-parser[rdf]'
+```
+
+生の SPARQL をそのまま渡す:
+
+```bash
+dotmd-parser ontology-query ./corpus/ --sparql \
+  "SELECT ?c WHERE { ?c a <http://www.w3.org/2002/07/owl#Class> }"
+
+dotmd-parser ontology-query ./corpus/ --sparql \
+  "ASK { ex:Application ex:evaluatedBy ?x }"
+```
+
+結果はクエリ種別に応じて整形されます: `SELECT` は行の集合、`ASK` は真偽値、
+`CONSTRUCT`/`DESCRIBE` はシリアライズされた Turtle を返します。
+
+名前付きクエリ — オントロジー自身の語彙 prefix に対するパラメータ化済み
+SPARQL テンプレートで、PREFIX 宣言やクラス IRI を手書きする必要がありません:
+
+```bash
+dotmd-parser ontology-query ./corpus/ properties Application
+dotmd-parser ontology-query ./corpus/ relations Application
+dotmd-parser ontology-query ./corpus/ defines feeRate
+dotmd-parser ontology-query ./corpus/ list classes
+dotmd-parser ontology-query ./corpus/ list properties
+dotmd-parser ontology-query ./corpus/ list vocabularies
+```
+
+- `properties <Class>` — `<Class>` を domain とする datatype/object
+  property を、種別と（宣言があれば）range とともに列挙します。
+- `relations <Class>` — `<Class>` が domain または range のどちらかとして
+  現れる object property を列挙します。
+- `defines <name>` — `<name>` を導入したソースドキュメントを返します。
+- `list classes|properties|vocabularies` — グラフ内の全クラス、全
+  property、または全 SKOS concept scheme を列挙します。
+
+`--format table|json` で出力形式を指定します（既定: `table`、`SELECT` の
+結果はヘッダ行付きタブ区切り）。行は毎回同じ順序になるようソートされ、
+再実行しても出力は決定的です。
+
+```bash
+dotmd-parser ontology-query ./corpus/ defines feeRate --format json
+```
+
+注意: これは*アサートされたグラフのみ*をクエリします — OWL 推論器や
+推論ステップはありません（例えば subclass/subproperty のエンテールメント
+は展開されません）。推論レイヤーの追加は将来の課題です。
+
 ## 開発
 
 ```bash

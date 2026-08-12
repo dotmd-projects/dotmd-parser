@@ -159,5 +159,26 @@ class TestRunQuery(unittest.TestCase):
             Q.run_query(self.root)
 
 
+import builtins
+
+
+class TestRdflibMissing(unittest.TestCase):
+    def test_require_rdflib_raises_runtimeerror(self):
+        real_import = builtins.__import__
+
+        def fake_import(name, *a, **k):
+            if name == "rdflib" or name.startswith("rdflib."):
+                raise ImportError("no rdflib")
+            return real_import(name, *a, **k)
+
+        builtins.__import__ = fake_import
+        try:
+            with self.assertRaises(RuntimeError) as cm:
+                Q._require_rdflib()
+            self.assertIn("dotmd-parser[rdf]", str(cm.exception))
+        finally:
+            builtins.__import__ = real_import
+
+
 if __name__ == "__main__":
     unittest.main()
