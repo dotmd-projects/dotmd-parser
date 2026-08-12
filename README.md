@@ -548,6 +548,70 @@ Install `pip install 'dotmd-parser[rdf]'` to enable Turtle syntax validation
 via `rdflib` during `--check` (optional; structural validation runs either
 way).
 
+## `ontology-audit` — active integrity audit over a built ontology
+
+Once `dotmd-parser ontology ./corpus/` has produced `ontology.yml` (and, as
+of this release, `ontology.json` — the canonical IR sidecar), audit it for
+internal contradictions and near-duplicate vocabulary terms:
+
+```bash
+export ANTHROPIC_API_KEY=...   # or put it in ./.env
+
+dotmd-parser ontology-audit ./corpus/
+```
+
+This reads `./corpus/ontology/ontology.json` plus the corpus documents
+themselves, and writes `./corpus/ontology/ontology-audit.md` and
+`ontology-audit.json`. It never reads or writes `ontology.yml` — the audit
+is a read-only check layered on top of the built ontology.
+
+What it reports:
+
+- **Contradictions** — candidate claims that violate a stated invariant are
+  detected first, then adversarially re-checked by a second pass that tries
+  to refute each one against the ontology's own structure (e.g. a scope
+  difference that fully explains an apparent inconsistency). Only survivors
+  are reported, tagged `CONFIRMED`, so structurally-normal near-misses don't
+  show up as false positives.
+- **Name-match proposals** — near-duplicate vocabulary values (e.g. two
+  spellings of the same channel name) found via deterministic difflib
+  candidate generation, then adjudicated by the LLM as `same`/`different`.
+  This is propose-only: nothing is renamed or merged automatically.
+- **Structural findings** — deterministic, no LLM involved: dangling
+  invariant references, promoted merge conflicts, vocabulary overlaps.
+- **Open questions** — surfaced as a byproduct of contradiction detection
+  when the model can't fully resolve a claim.
+
+### Flags
+
+```bash
+dotmd-parser ontology-audit ./corpus/ --structural-only   # deterministic, no API key needed
+dotmd-parser ontology-audit ./corpus/ --check              # CI gate: non-zero exit on any CONFIRMED contradiction
+dotmd-parser ontology-audit ./corpus/ --plan > plan.md     # host-agent prompt pack, no API key
+dotmd-parser ontology-audit ./corpus/ --apply-from audit.json
+dotmd-parser ontology-audit ./corpus/ --model claude-... --out ./corpus/ontology/
+```
+
+- `--structural-only` skips the LLM entirely and reports only structural
+  findings — fully deterministic, safe to run without an API key.
+- `--check` exits non-zero when any `CONFIRMED` contradiction is present;
+  wire it into CI to catch ontology drift.
+- `--plan` / `--apply-from` mirror the `ontology` and `analyze` host-agent
+  pattern: emit a prompt pack for a host agent (e.g. Claude Code) to run
+  locally with no API key, then apply the collected JSON result.
+- `--model` selects the Claude model; `--out` overrides the output
+  directory (default: `<path>/ontology/`).
+
+Determinism note: structural findings and name-match *candidate* generation
+are fully deterministic (same input → byte-identical output). Contradiction
+detection/verification and name-match adjudication call the LLM and are
+therefore not deterministic across runs — `--structural-only` is the
+deterministic subset.
+
+This is v2 of the ontology tooling: an active integrity audit, not a query
+layer — there's still no SPARQL or similar query interface over the
+ontology (that remains future work).
+
 ## Claude Code Skill integration
 
 A ready-to-use Claude Code Skill is bundled with the package at

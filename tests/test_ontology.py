@@ -236,7 +236,7 @@ class TestOrchestrator(unittest.TestCase):
         res = O.build_ontology(root, caller=fake)
         self.assertEqual(res["report"]["errors"], [])
         names = {Path(w).name for w in res["written"]}
-        self.assertEqual(names, {"ontology.yml", "ontology.ttl", "ontology-design.md"})
+        self.assertEqual(names, {"ontology.yml", "ontology.ttl", "ontology-design.md", "ontology.json"})
         self.assertTrue((root / "ontology" / "ontology.yml").exists())
         tmp.cleanup()
 
@@ -276,6 +276,24 @@ class TestDeterminism(unittest.TestCase):
         self.assertEqual(O.emit_design_md(ir1), O.emit_design_md(ir2))
         # classes sorted A before B regardless of input order
         self.assertEqual([c["name"] for c in ir1["classes"]], ["A", "B"])
+
+
+class TestEmitJsonSidecar(unittest.TestCase):
+    def test_write_ontology_emits_loadable_json(self):
+        import json, tempfile
+        from pathlib import Path
+        ir = O.merge_ontology([{"source": "a.md", "elements": {**O.EMPTY_ELEMENTS,
+            "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}]}}],
+            {"namespace": "https://ex.org/o#", "prefix": "ex", "domain": "d",
+             "built_from": "c", "source_docs": ["a.md"], "generated_by": "t"})
+        tmp = tempfile.TemporaryDirectory()
+        written = O.write_ontology(ir, tmp.name, emit=("json",))
+        p = Path(tmp.name) / "ontology.json"
+        self.assertIn(str(p), written)
+        loaded = json.loads(p.read_text(encoding="utf-8"))
+        self.assertEqual(loaded["classes"][0]["name"], "Application")
+        self.assertEqual(loaded, ir)          # round-trips the IR exactly
+        tmp.cleanup()
 
 
 if __name__ == "__main__":

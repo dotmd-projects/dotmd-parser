@@ -469,6 +469,68 @@ dotmd-parser ontology ./corpus/ --dry-run             # 抽出せずに API コ�
 `pip install 'dotmd-parser[rdf]'` を入れると `--check` 時に `rdflib` による
 Turtle 構文検証が有効になります（任意。構造検証はどちらでも実行されます）。
 
+## `ontology-audit` — ビルド済みオントロジーへのアクティブな整合性監査
+
+`dotmd-parser ontology ./corpus/` が `ontology.yml`（および今回から
+`ontology.json` — 正規 IR の sidecar）を生成したあと、それを監査して
+内部矛盾や近似重複した語彙用語を検出します:
+
+```bash
+export ANTHROPIC_API_KEY=...   # または ./.env に記載
+
+dotmd-parser ontology-audit ./corpus/
+```
+
+`./corpus/ontology/ontology.json` とコーパスのドキュメント本体を読み込み、
+`./corpus/ontology/ontology-audit.md` と `ontology-audit.json` を書き出します。
+`ontology.yml` は一切読み書きしません — この監査はビルド済みオントロジーの
+上に載る読み取り専用のチェックです。
+
+報告する内容:
+
+- **矛盾（contradictions）** — 明示された不変条件に違反する候補クレームを
+  まず検出し、次に第二パスがオントロジー自体の構造（例: 見かけ上の矛盾を
+  完全に説明するスコープの違い）に照らして各クレームを反証しようと試みます。
+  生き残ったものだけが `CONFIRMED` として報告されるため、構造的に正常な
+  ニアミスが誤検出として出てくることはありません。
+- **名寄せ提案（name-match proposals）** — 語彙値の近似重複（例: 同一媒体名
+  の 2 通りの表記）を、決定的な difflib による候補生成のあと LLM が
+  `same`/`different` を判定して見つけます。あくまで提案どまりで、自動での
+  リネームやマージは行いません。
+- **構造的所見（structural findings）** — LLM 不使用の決定的なもの:
+  宙ぶらりんの不変条件参照、昇格されたマージ衝突、語彙の重複。
+- **未解決事項（open questions）** — 矛盾検出の副産物として、モデルが
+  クレームを完全には解決しきれなかった場合に表出します。
+
+### フラグ
+
+```bash
+dotmd-parser ontology-audit ./corpus/ --structural-only   # 決定的、API キー不要
+dotmd-parser ontology-audit ./corpus/ --check              # CI ゲート: CONFIRMED な矛盾があれば非ゼロ終了
+dotmd-parser ontology-audit ./corpus/ --plan > plan.md     # host-agent プロンプトパック、API キー不要
+dotmd-parser ontology-audit ./corpus/ --apply-from audit.json
+dotmd-parser ontology-audit ./corpus/ --model claude-... --out ./corpus/ontology/
+```
+
+- `--structural-only` は LLM を一切使わず構造的所見のみを報告します —
+  完全に決定的で、API キーなしでも安全に実行できます。
+- `--check` は `CONFIRMED` な矛盾が 1 件でもあれば非ゼロ終了します — CI に
+  組み込んでオントロジーのドリフトを検知できます。
+- `--plan` / `--apply-from` は `ontology` / `analyze` と同じ host-agent
+  パターンです: プロンプトパックを出力し、host agent（例: Claude Code）が
+  API キーなしでローカル実行、収集した JSON 結果を適用します。
+- `--model` は Claude モデルを指定、`--out` は出力先ディレクトリを上書き
+  します（既定: `<path>/ontology/`）。
+
+決定性について: 構造的所見と名寄せの*候補*生成は完全に決定的です（同じ
+入力からは常にバイト同一の出力）。矛盾の検出/検証と名寄せの判定は LLM を
+呼び出すため、実行ごとに決定的ではありません — `--structural-only` が
+決定的なサブセットです。
+
+これはオントロジーツールの v2 で、アクティブな整合性監査であり、
+クエリレイヤーではありません — SPARQL 等のクエリインターフェースは
+まだ存在しません（将来の課題です）。
+
 ## 開発
 
 ```bash
