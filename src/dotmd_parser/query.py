@@ -8,6 +8,7 @@ mutates the ontology.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 STANDARD_PREFIXES = {"owl", "rdfs", "xsd", "skos", "rdf", "xml"}
@@ -87,7 +88,7 @@ def run_sparql(graph, query: str) -> dict:
     return out
 
 
-_BAD_ARG_CHARS = set(' \t\n{}<>"')
+_ARG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _NAMED_TEMPLATES = {
     "properties": (
@@ -129,8 +130,8 @@ def named_query(graph, meta: dict, kind: str, arg: str) -> dict:
                          f"(choose from {sorted(_NAMED_TEMPLATES)})")
     if not arg:
         raise ValueError(f"query '{kind}' requires an argument")
-    if set(arg) & _BAD_ARG_CHARS:
-        raise ValueError(f"invalid characters in argument: {arg!r}")
+    if not _ARG_RE.match(arg):
+        raise ValueError(f"invalid argument (allowed: letters, digits, _ , -): {arg!r}")
 
     if kind == "list":
         body = _LIST_TEMPLATES.get(arg)

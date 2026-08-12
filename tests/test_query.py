@@ -121,6 +121,11 @@ class TestNamedQuery(unittest.TestCase):
         with self.assertRaises(ValueError):
             Q.named_query(self.graph, self.meta, "properties", "Bad Name")
 
+    def test_injection_chars_raise(self):
+        for bad in ("App#x", "App;DROP", "App(", "a/b", "a.b"):
+            with self.assertRaises(ValueError):
+                Q.named_query(self.graph, self.meta, "properties", bad)
+
     def test_unknown_kind_raises(self):
         with self.assertRaises(ValueError):
             Q.named_query(self.graph, self.meta, "bogus", "x")
