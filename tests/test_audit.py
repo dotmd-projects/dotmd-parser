@@ -200,5 +200,24 @@ class TestAuditDeterminism(unittest.TestCase):
         self.assertEqual(A.namematch_candidates(ir), A.namematch_candidates(ir))
 
 
+class TestAuditRobustness(unittest.TestCase):
+    def test_missing_keys_and_null_provenance_do_not_raise(self):
+        # IR missing several top-level keys entirely, and a null provenance
+        ir = {"classes": [{"name": "A", "label_ja": "a", "domain_group": "g",
+                           "provenance": None}],
+              "vocabularies": [], "invariants": []}
+        # must not raise despite missing datatype_properties/object_properties/conflicts
+        out = A.structural_findings(ir)
+        self.assertIsInstance(out, list)
+        cands = A.namematch_candidates(ir)
+        self.assertIsInstance(cands, list)
+        known = A._known_terms(ir)
+        self.assertIsInstance(known, set)
+        terms = A._surface_terms(ir)
+        self.assertIsInstance(terms, list)
+        summary = A._ontology_summary(ir)
+        self.assertIsInstance(summary, str)
+
+
 if __name__ == "__main__":
     unittest.main()

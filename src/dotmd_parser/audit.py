@@ -32,13 +32,13 @@ def load_ir(directory: str | Path) -> dict:
 
 def _known_terms(ir: dict) -> set[str]:
     names: set[str] = set()
-    for c in ir["classes"]:
+    for c in ir.get("classes", []):
         names.add(_norm(c["name"]))
-    for dp in ir["datatype_properties"]:
+    for dp in ir.get("datatype_properties", []):
         names.add(_norm(dp["name"]))
-    for op in ir["object_properties"]:
+    for op in ir.get("object_properties", []):
         names.add(_norm(op["name"]))
-    for v in ir["vocabularies"]:
+    for v in ir.get("vocabularies", []):
         names.add(_norm(v["name"]))
     return names
 
@@ -52,31 +52,31 @@ def structural_findings(ir: dict) -> list[dict]:
         findings.append({
             "kind": "merge-conflict",
             "detail": c.get("detail", ""),
-            "provenance": list(c.get("provenance", [])),
+            "provenance": list(c.get("provenance") or []),
         })
 
     # vocab-overlap: same value string across two different vocabularies
     seen: dict[str, str] = {}
-    for v in ir["vocabularies"]:
+    for v in ir.get("vocabularies", []):
         for val in v.get("values", []):
             if val in seen and seen[val] != v["name"]:
                 findings.append({
                     "kind": "vocab-overlap",
                     "detail": f'value "{val}" appears in both {seen[val]} and {v["name"]}',
-                    "provenance": list(v.get("provenance", [])),
+                    "provenance": list(v.get("provenance") or []),
                 })
             else:
                 seen[val] = v["name"]
 
     # dangling-invariant-ref: an invariant whose ASCII word tokens match no known term
     known = _known_terms(ir)
-    for inv in ir["invariants"]:
+    for inv in ir.get("invariants", []):
         tokens = {_norm(t) for t in _WORD_RE.findall(inv.get("statement", ""))}
         if tokens and not (tokens & known):
             findings.append({
                 "kind": "dangling-invariant-ref",
                 "detail": f'invariant {inv.get("id","?")} references no known ontology term',
-                "provenance": list(inv.get("provenance", [])),
+                "provenance": list(inv.get("provenance") or []),
             })
 
     return findings
@@ -87,9 +87,9 @@ NAMEMATCH_THRESHOLD = 0.6
 
 def _surface_terms(ir: dict) -> list[str]:
     terms: list[str] = []
-    for v in ir["vocabularies"]:
+    for v in ir.get("vocabularies", []):
         terms.extend(v.get("values", []))
-    for c in ir["classes"]:
+    for c in ir.get("classes", []):
         terms.append(c["name"])
         if c.get("label_ja"):
             terms.append(c["label_ja"])
@@ -152,8 +152,8 @@ def _call(prompt: str, system: str, model: str, api_key, caller):
 
 
 def _ontology_summary(ir: dict) -> str:
-    inv = "\n".join(f"- {i.get('id','?')}: {i.get('statement','')}" for i in ir["invariants"])
-    classes = ", ".join(c["name"] for c in ir["classes"])
+    inv = "\n".join(f"- {i.get('id','?')}: {i.get('statement','')}" for i in ir.get("invariants", []))
+    classes = ", ".join(c["name"] for c in ir.get("classes", []))
     return f"classes: {classes}\ninvariants:\n{inv}"
 
 
