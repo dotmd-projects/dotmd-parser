@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 from dotmd_parser import llm
+from dotmd_parser.analyze import scan_documents
 from dotmd_parser.ontology import _norm
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
@@ -221,3 +222,117 @@ def adjudicate_namematches(candidates, ir, corpus, model=None, api_key=None, *, 
                 "provenance": [],
             })
     return matches
+
+
+_AUDIT_JSON = "ontology-audit.json"
+_AUDIT_MD = "ontology-audit.md"
+
+
+def _corpus(directory) -> list[dict]:
+    docs = scan_documents(directory, extensions=[".md", ".txt"])
+    # exclude the ontology output dir
+    return [{"path": d["path"], "content": d["content"]}
+            for d in docs if not d["path"].startswith("ontology/")]
+
+
+def run_audit(directory, out_dir=None, structural_only=False, model=None, api_key=None,
+              *, caller=None) -> dict:
+    ir = load_ir(directory)
+    corpus = _corpus(directory)
+    known_paths = {d["path"] for d in corpus}
+    warnings: list[str] = []
+    structural = structural_findings(ir)
+
+    contradictions: list[dict] = []
+    name_matches: list[dict] = []
+    open_qs: list[dict] = []
+
+    if not structural_only:
+        det = detect_contradictions(ir, corpus, model=model, api_key=api_key, caller=caller)
+        contradictions = verify_contradictions(det["candidates"], ir, model=model,
+                                                api_key=api_key, caller=caller)
+        open_qs = det["open_questions"]
+        for c in contradictions:
+            for ev in c.get("evidence", []):
+                if ev not in known_paths:
+                    warnings.append(f"contradiction evidence path not in corpus: {ev}")
+        cands = namematch_candidates(ir)
+        name_matches = adjudicate_namematches(cands, ir, corpus, model=model,
+                                              api_key=api_key, caller=caller)
+
+    findings = {
+        "meta": {"audited": "ontology/ontology.json", "corpus": str(directory),
+                 "generated_by": "dotmd-parser ontology-audit v2"},
+        "structural": structural,
+        "contradictions": sorted(contradictions, key=_severity_key),
+        "name_matches": name_matches,
+        "open_questions": open_qs,
+        "warnings": warnings,
+    }
+    out = Path(out_dir) if out_dir else (Path(directory).resolve() / "ontology")
+    out.mkdir(parents=True, exist_ok=True)
+    written = []
+    (out / _AUDIT_JSON).write_text(emit_audit_json(findings), encoding="utf-8")
+    written.append(str(out / _AUDIT_JSON))
+    (out / _AUDIT_MD).write_text(emit_audit_md(findings), encoding="utf-8")
+    written.append(str(out / _AUDIT_MD))
+    return {"findings": findings, "written": written, "summary": format_audit_summary(findings)}
+
+
+_SEV_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _severity_key(c: dict):
+    return (_SEV_ORDER.get(c.get("severity", "low"), 3), c.get("claim", ""))
+
+
+def emit_audit_json(findings: dict) -> str:
+    return json.dumps(findings, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+
+
+def emit_audit_md(findings: dict) -> str:
+    out = ["# オントロジー整合性監査レポート", "",
+           "> LLM 由来の矛盾・名寄せ所見は**非決定的**です。人間の確認を前提にしてください。", ""]
+    out += ["## 矛盾 (CONFIRMED)", ""]
+    if findings["contradictions"]:
+        for c in findings["contradictions"]:
+            out.append(f"### [{c.get('severity','')}] {c.get('claim','')}")
+            out.append(f"- violates: {c.get('violates','')}")
+            out.append(f"- evidence: {', '.join(c.get('evidence', []))}")
+            out.append(f"- refutation_checked: {c.get('refutation_checked','')}")
+            out.append("")
+    else:
+        out += ["（CONFIRMED な矛盾なし）", ""]
+
+    out += ["## 名寄せ提案", "", "| from | → to | canonical | confidence | rationale |",
+            "|---|---|---|---|---|"]
+    for n in findings["name_matches"]:
+        out.append(f"| {n['from']} | {n['to']} | {n['canonical']} | "
+                   f"{n.get('confidence','')} | {n.get('rationale','')} |")
+    out.append("")
+
+    out += ["## 構造所見", ""]
+    for s in findings["structural"]:
+        out.append(f"- [{s['kind']}] {s['detail']}  ({', '.join(s.get('provenance', []))})")
+    out.append("")
+
+    if findings["open_questions"]:
+        out += ["## 未解決質問", ""]
+        for q in findings["open_questions"]:
+            out.append(f"- {q.get('text','')}")
+        out.append("")
+
+    if findings["warnings"]:
+        out += ["## 警告", ""]
+        for w in findings["warnings"]:
+            out.append(f"- {w}")
+        out.append("")
+    return "\n".join(out) + "\n"
+
+
+def format_audit_summary(findings: dict) -> str:
+    return (f"structural={len(findings['structural'])} "
+            f"contradictions={len(findings['contradictions'])} "
+            f"name_matches={len(findings['name_matches'])} "
+            f"open_questions={len(findings['open_questions'])} "
+            f"warnings={len(findings['warnings'])}")

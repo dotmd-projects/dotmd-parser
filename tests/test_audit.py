@@ -117,5 +117,52 @@ class TestAdjudicate(unittest.TestCase):
         self.assertEqual(out[0]["to"], "Google 指名")
 
 
+import tempfile, json as _json2
+from pathlib import Path
+
+
+class TestRunAudit(unittest.TestCase):
+    def _prep(self):
+        tmp = tempfile.TemporaryDirectory()
+        root = Path(tmp.name)
+        (root / "B-1c.md").write_text("審査681 申請1290", encoding="utf-8")
+        onto = root / "ontology"
+        onto.mkdir()
+        ir = {"meta": {}, "classes": [{"name": "ConversionEvent", "label_ja": "CV",
+              "domain_group": "マーケ", "provenance": ["B-1c.md"]}],
+              "datatype_properties": [], "object_properties": [],
+              "vocabularies": [], "invariants": [{"id": "r", "statement": "審査CV≥申請CV",
+              "kind": "constraint", "provenance": ["B-1c.md"]}],
+              "conflicts": [], "open_questions": []}
+        (onto / "ontology.json").write_text(_json2.dumps(ir), encoding="utf-8")
+        return tmp, root
+
+    def test_structural_only_no_llm(self):
+        tmp, root = self._prep()
+        res = A.run_audit(root, structural_only=True)          # no caller, no API — must not raise
+        self.assertEqual(res["findings"]["contradictions"], [])
+        self.assertTrue(any(Path(p).name == "ontology-audit.json" for p in res["written"]))
+        tmp.cleanup()
+
+    def test_full_audit_with_caller_and_hallucination_guard(self):
+        tmp, root = self._prep()
+
+        def caller(prompt, system, model):
+            if "skeptic" in system.lower() or "refute" in prompt.lower():
+                return _resp({"refuted": False, "reason": "ok"})
+            if "adjudicate" in system.lower() or "same domain entity" in prompt.lower():
+                return _resp({"decision": "different"})
+            return _resp({"candidates": [{"claim": "審査<申請", "violates": "審査CV≥申請CV",
+                          "severity": "high", "evidence": ["B-1c.md", "ghost.md"]}],
+                          "open_questions": []})
+
+        res = A.run_audit(root, caller=caller)
+        f = res["findings"]
+        self.assertEqual(len(f["contradictions"]), 1)
+        self.assertEqual(f["contradictions"][0]["verdict"], "CONFIRMED")
+        self.assertTrue(any("ghost.md" in w for w in f["warnings"]))   # hallucinated evidence path flagged
+        tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
