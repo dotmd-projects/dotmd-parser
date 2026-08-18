@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `ontology-abox` subcommand: materialize a datatype-only ABox (instances TTL)
+  from CSV data. `--map Class=csv` assigns each CSV to an ontology class; columns
+  are auto-matched to the class's datatype properties by name similarity and
+  emitted as typed literals per row (`<prefix>:<Class>_<N>`). Emits
+  ontology-abox.ttl (composable with the TBox for querying) + a mapping report.
+  stdlib-only, deterministic, reads the ontology only.
 - `ontology-verify-enums` subcommand: ground ontology controlled vocabularies
   against CSV data. Auto-matches each vocabulary to the best-overlapping column
   (by shared/|enum|) and reports enum values absent from data (dead) and data

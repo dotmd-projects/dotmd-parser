@@ -142,5 +142,15 @@ class TestRunAbox(unittest.TestCase):
             A.run_abox(self.root, {"Application": str(self.root / "nope.csv")})
 
 
+class TestAboxDeterminism(unittest.TestCase):
+    def test_emit_deterministic(self):
+        meta = {"namespace": "https://ex.org/o#", "prefix": "ex"}
+        dprops = [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
+        rows = [{"fee_rate": "0.05"}, {"fee_rate": "0.10"}]
+        pc = A.match_columns_to_props(dprops, ["fee_rate"], 0.6)
+        lines, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
+        self.assertEqual(A.emit_abox_ttl(meta, [lines]), A.emit_abox_ttl(meta, [lines]))
+
+
 if __name__ == "__main__":
     unittest.main()

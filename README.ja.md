@@ -638,6 +638,53 @@ dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --out ./corpus/ontolog
 を変更することはありません。検証対象は CSV データのみです。BigQuery
 （などのウェアハウス）テーブルへの直接照合は将来の課題です。
 
+## `ontology-abox` — CSV データからインスタンス（ABox）を生成
+
+`dotmd-parser ontology ./corpus/` が `ontology.json` を生成したあと、実際の
+CSV 行をオントロジーのインスタンスに変換できます:
+
+```bash
+dotmd-parser ontology-abox ./corpus/ \
+  --map Application=./data/applications.csv --map Purchase=./data/purchases.csv
+```
+
+`--map Class=csv` はそれぞれ CSV ファイルをオントロジーのクラスに割り当てます。
+そのクラスについて `ontology-abox` は `./corpus/ontology/ontology.json` を読み込み、
+CSV の列を正規化した名前の類似度でクラスの datatype property に自動マッチング
+し（`--threshold`、既定 `0.6`）、CSV の各行をインスタンス
+`<prefix>:<Class>_<N>` としてそのクラスの型を付けて生成し、マッチした
+プロパティごとに型付きリテラルを付与します（マッチしない列は推測せずスキップ
+されます）。
+
+`./corpus/ontology/ontology-abox.ttl`（インスタンスのみ — クラス/プロパティの
+定義は含まない）と `ontology-abox-report.json`（クラスごとのマッチ/未マッチ
+列とインスタンス数）を書き出します。`ontology-abox.ttl` を `ontology.ttl`
+（TBox）と合わせて読み込めば、`ontology-query` で実データをクエリしたり、
+将来の推論器への入力として使えます。
+
+### フラグ
+
+```bash
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map Purchase=b.csv
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --threshold 0.8
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/ontology/
+```
+
+- `--map` — CSV ファイルをオントロジーのクラスに割り当てる `Class=csv`
+  （複数指定可、必須）。クラスは `ontology.json` に存在する必要があり、
+  クラス・CSV とも重複指定はできません。
+- `--threshold` — CSV 列を datatype property にマッチさせる際の、正規化した
+  名前類似度の最小スコア（既定 `0.6`）。
+- `--out` — 出力先ディレクトリを上書きします（既定: `<path>/ontology/`）。
+
+前提条件: 先に `dotmd-parser ontology ./corpus/` を実行して `ontology.json`
+を生成しておく必要があります。このサブコマンドは stdlib のみで動作し
+（LLM 不使用、API キー不要）、完全に決定的で、オントロジーを読み取るのみです
+— `ontology.yml` も `ontology.json` も変更しません。このバージョンで扱うのは
+**datatype property のみ**です。各リテラル値はマッチした CSV 列からそのまま
+取得されます。インスタンス間のオブジェクトプロパティのリンク（外部キー列を
+別クラスのインスタンスに配線するなど）は将来の課題です。
+
 ## 開発
 
 ```bash
