@@ -88,6 +88,11 @@ from dotmd_parser.audit import (
 )
 from dotmd_parser.query import run_query as _run_query
 from dotmd_parser.enums import run_enum_verify as _run_enum_verify
+from dotmd_parser.abox import (
+    load_class_dprops as _abox_load,
+    parse_maps as _abox_parse_maps,
+    run_abox as _run_abox,
+)
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -564,6 +569,27 @@ def cmd_ontology_verify_enums(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ontology_abox(args: argparse.Namespace) -> int:
+    """Materialize a datatype-only ABox (instances TTL) from CSV data."""
+    try:
+        _, class_names, _ = _abox_load(args.path)
+        maps = _abox_parse_maps(args.map, class_names)
+        res = _run_abox(args.path, maps, threshold=args.threshold, out_dir=args.out)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except (ValueError, RuntimeError) as e:   # bad/unknown/dup --map, unreadable CSV, missing meta
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(f"Wrote {len(res['written'])} file(s):")
+    for f in res["written"]:
+        print(f"  {f}")
+    print(f"  {res['summary']}")
+    for w in res["findings"]["warnings"]:
+        print(f"warning: {w}", file=sys.stderr)
+    return 0
+
+
 def cmd_ontology_query(args: argparse.Namespace) -> int:
     """Run SPARQL (raw or named) over a built ontology.ttl."""
     try:
@@ -892,6 +918,16 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="Exit non-zero when any vocabulary has enum values absent from data")
     p_enums.set_defaults(func=cmd_ontology_verify_enums)
 
+    p_abox = sub.add_parser("ontology-abox",
+                            help="Materialize a datatype-only ABox (instances TTL) from CSV")
+    p_abox.add_argument("path", help="Corpus dir containing ontology/ontology.json")
+    p_abox.add_argument("--map", action="append", required=True, metavar="CLASS=CSV",
+                        help="Map an ontology class to a CSV of its instances (repeatable)")
+    p_abox.add_argument("--threshold", type=float, default=0.6,
+                        help="Column↔property name-match threshold (default 0.6)")
+    p_abox.add_argument("--out", help="Output dir (default: <path>/ontology)")
+    p_abox.set_defaults(func=cmd_ontology_abox)
+
     p_query = sub.add_parser("ontology-query",
                              help="Run SPARQL over a built ontology.ttl (needs [rdf])")
     p_query.add_argument("path", help="Corpus dir containing ontology/ontology.ttl")
@@ -991,7 +1027,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit", "ontology-query", "ontology-verify-enums"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit", "ontology-query", "ontology-verify-enums", "ontology-abox"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:
