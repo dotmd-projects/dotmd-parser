@@ -57,6 +57,7 @@ def _norm_ident(s: str) -> str:
 def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, str]:
     matches: dict[str, str] = {}
     norm_cols = [(col, _norm_ident(col)) for col in fieldnames]
+    # Note: a single column may be selected by more than one property (allowed by design).
     for dp in dprops:
         pn = _norm_ident(dp["name"])
         best = None  # (ratio, column)

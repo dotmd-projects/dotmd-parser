@@ -96,6 +96,16 @@ class TestMatchMaterialize(unittest.TestCase):
         self.assertIn('ex:Application_2 a ex:Application ;', text)
         self.assertIn('ex:applicationStatus "謝絶"^^xsd:string .', text)  # terminated with .
 
+    def test_materialize_zero_matched_cells_terminates(self):
+        # row where the only matched column is empty -> block is just the type line, terminated with .
+        rows = [{"fee_rate": "", "applicationStatus": "", "note": "x"}]
+        prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
+        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        text = "\n".join(lines)
+        self.assertEqual(count, 1)
+        self.assertIn("ex:Application_1 a ex:Application .", text)   # terminated on type line
+        self.assertNotIn("ex:feeRate", text)                          # no property lines
+
 
 class TestRunAbox(unittest.TestCase):
     def setUp(self):
