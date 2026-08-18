@@ -38,6 +38,13 @@ class TestLoadAndMaps(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             A.load_class_dprops(self.root)
 
+    def test_load_missing_meta_raises(self):
+        onto = self.root / "ontology"; onto.mkdir()
+        ir = {"meta": {}, "classes": [], "datatype_properties": []}
+        (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            A.load_class_dprops(self.root)
+
     def test_parse_maps_ok(self):
         self.assertEqual(A.parse_maps(["Application=app.csv"], {"Application"}),
                          {"Application": "app.csv"})
