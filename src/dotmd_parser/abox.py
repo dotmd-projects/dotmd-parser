@@ -96,3 +96,63 @@ def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[l
         lines[-1] = lines[-1].rstrip(" ;") + " ."   # terminate the subject block
         lines.append("")
     return lines, count
+
+
+_ABOX_TTL = "ontology-abox.ttl"
+_ABOX_REPORT = "ontology-abox-report.json"
+
+
+def emit_abox_ttl(meta: dict, class_blocks: list) -> str:
+    p = meta["prefix"]
+    lines = [f"@prefix {p}: <{meta['namespace']}> .",
+             "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .", ""]
+    for block in class_blocks:
+        lines.extend(block)
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def format_abox_summary(findings: dict) -> str:
+    total = sum(c["instances"] for c in findings["classes"])
+    return (f"classes={len(findings['classes'])} instances={total} "
+            f"warnings={len(findings['warnings'])}")
+
+
+def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
+    meta, class_names, dprops_by_class = load_class_dprops(directory)
+    prefix = meta["prefix"]
+    class_reports = []
+    warnings: list[str] = []
+    blocks: list[list[str]] = []
+    for cls, file in maps.items():
+        try:
+            with open(file, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
+                rows = list(reader)
+        except (OSError, UnicodeDecodeError, csv.Error) as e:
+            raise ValueError(f"could not read {file}: {e}") from e
+        dprops = dprops_by_class.get(cls, [])
+        prop_col = match_columns_to_props(dprops, fieldnames, threshold)
+        lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
+        blocks.append(lines)
+        unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]
+        if not prop_col:
+            warnings.append(f"class {cls} matched no columns; only rdf:type materialized")
+        class_reports.append({"class": cls, "file": str(file), "instances": count,
+                              "matched": prop_col, "unmatched_props": unmatched})
+
+    findings = {
+        "meta": {"audited": "ontology/ontology.json", "namespace": meta["namespace"],
+                 "prefix": prefix, "threshold": threshold,
+                 "generated_by": "dotmd-parser ontology-abox v4c"},
+        "classes": class_reports,
+        "warnings": warnings,
+    }
+    out = Path(out_dir) if out_dir else (Path(directory).resolve() / "ontology")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / _ABOX_TTL).write_text(emit_abox_ttl(meta, blocks), encoding="utf-8")
+    (out / _ABOX_REPORT).write_text(
+        json.dumps(findings, sort_keys=True, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"findings": findings,
+            "written": [str(out / _ABOX_TTL), str(out / _ABOX_REPORT)],
+            "summary": format_abox_summary(findings)}

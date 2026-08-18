@@ -1,3 +1,4 @@
+import csv
 import json
 import tempfile
 import unittest
@@ -15,6 +16,12 @@ def _write_ontology(root: Path):
               {"name": "applicationStatus", "domain": "Application", "type": "string", "label_ja": "状態"},
               {"name": "requestedAmount", "domain": "Application", "type": "decimal", "label_ja": "申請額"}]}
     (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+
+
+def _write_csv(path: Path, rows: list[dict]):
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader(); w.writerows(rows)
 
 
 class TestLoadAndMaps(unittest.TestCase):
@@ -88,6 +95,51 @@ class TestMatchMaterialize(unittest.TestCase):
         # row 2 has empty fee_rate -> only applicationStatus emitted, block still valid
         self.assertIn('ex:Application_2 a ex:Application ;', text)
         self.assertIn('ex:applicationStatus "謝絶"^^xsd:string .', text)  # terminated with .
+
+
+class TestRunAbox(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _write_ontology(self.root)
+        self.csv = self.root / "app.csv"
+        _write_csv(self.csv, [{"fee_rate": "0.05", "applicationStatus": "買取成立", "note": "x"},
+                              {"fee_rate": "0.10", "applicationStatus": "謝絶", "note": "y"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_run_writes_ttl_and_report(self):
+        res = A.run_abox(self.root, {"Application": str(self.csv)})
+        c = res["findings"]["classes"][0]
+        self.assertEqual(c["instances"], 2)
+        self.assertEqual(c["matched"]["feeRate"], "fee_rate")
+        self.assertIn("requestedAmount", c["unmatched_props"])
+        self.assertTrue((self.root / "ontology" / "ontology-abox.ttl").exists())
+        self.assertTrue((self.root / "ontology" / "ontology-abox-report.json").exists())
+
+    def test_ttl_parses_with_rdflib(self):
+        try:
+            import rdflib  # noqa: F401
+        except ImportError:
+            self.skipTest("rdflib not installed")
+        from rdflib import Graph, RDF, URIRef
+        A.run_abox(self.root, {"Application": str(self.csv)})
+        g = Graph()
+        g.parse(self.root / "ontology" / "ontology-abox.ttl", format="turtle")
+        app1 = URIRef("https://ex.org/o#Application_1")
+        self.assertIn((app1, RDF.type, URIRef("https://ex.org/o#Application")), g)
+
+    def test_deterministic(self):
+        out1 = self.root / "o1"; out2 = self.root / "o2"
+        A.run_abox(self.root, {"Application": str(self.csv)}, out_dir=str(out1))
+        A.run_abox(self.root, {"Application": str(self.csv)}, out_dir=str(out2))
+        self.assertEqual((out1 / "ontology-abox.ttl").read_text(encoding="utf-8"),
+                         (out2 / "ontology-abox.ttl").read_text(encoding="utf-8"))
+
+    def test_unreadable_csv_raises(self):
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root, {"Application": str(self.root / "nope.csv")})
 
 
 if __name__ == "__main__":
