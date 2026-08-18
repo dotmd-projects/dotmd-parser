@@ -98,5 +98,39 @@ class TestMatchAndVerify(unittest.TestCase):
         self.assertEqual(v["data_not_in_enum_omitted"], 1)                            # e3 omitted
 
 
+class TestRunEnumVerify(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        onto = self.root / "ontology"; onto.mkdir()
+        ir = {"vocabularies": [{"name": "applicationStatus",
+                                "values": ["買取成立", "謝絶", "キャンセル", "未処理"]}]}
+        (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+        self.csv = self.root / "t.csv"
+        _write_csv(self.csv, [{"status": "買取成立"}, {"status": "謝絶"},
+                              {"status": "キャンセル"}, {"status": "却下"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_run_writes_report_and_findings(self):
+        res = E.run_enum_verify(self.root, [str(self.csv)])
+        f = res["findings"]
+        app = f["vocabularies"][0]
+        self.assertEqual(app["enum_not_in_data"], ["未処理"])
+        self.assertTrue(any(Path(p).name == "ontology-enum-report.json" for p in res["written"]))
+        self.assertTrue((self.root / "ontology" / "ontology-enum-report.md").exists())
+
+    def test_deterministic_json(self):
+        r1 = E.run_enum_verify(self.root, [str(self.csv)])
+        r2 = E.run_enum_verify(self.root, [str(self.csv)])
+        self.assertEqual(E.emit_enum_report_json(r1["findings"]),
+                         E.emit_enum_report_json(r2["findings"]))
+
+    def test_all_unreadable_raises(self):
+        with self.assertRaises(ValueError):
+            E.run_enum_verify(self.root, [str(self.root / "nope.csv")])
+
+
 if __name__ == "__main__":
     unittest.main()

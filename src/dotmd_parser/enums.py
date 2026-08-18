@@ -136,3 +136,91 @@ def verify_enums(
             }
         )
     return {"vocabularies": vocabularies, "unmatched": unmatched}
+
+
+_REPORT_JSON = "ontology-enum-report.json"
+_REPORT_MD = "ontology-enum-report.md"
+
+
+def emit_enum_report_json(findings: dict) -> str:
+    """Emit deterministic JSON report with sorted keys."""
+    return json.dumps(findings, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+
+
+def emit_enum_report_md(findings: dict) -> str:
+    """Emit markdown report from findings."""
+    m = findings["meta"]
+    out = ["# オントロジー enum 実在検証レポート", "",
+           f"- threshold: {m.get('threshold')} / top: {m.get('top')}",
+           f"- data: {', '.join(m.get('data', []))}",
+           ""]
+    for v in findings["vocabularies"]:
+        out.append(f"## {v['name']}  (enum {v['enum_count']} 値, coverage {v['coverage']})")
+        if v["matched"]:
+            mm = v["matched"]
+            out.append(f"- matched: `{mm['file']}:{mm['column']}` (score {mm['score']}, shared {mm['shared']})")
+        else:
+            out.append("- matched: (対応列なし)")
+        if v["enum_not_in_data"]:
+            out.append(f"- ⚠️ enum にあるがデータに無い: {', '.join(v['enum_not_in_data'])}")
+        if v["data_not_in_enum"]:
+            out.append("- データにあるが enum に無い (頻度順):")
+            out.append("")
+            out.append("  | value | count |")
+            out.append("  |---|---|")
+            for d in v["data_not_in_enum"]:
+                out.append(f"  | {d['value']} | {d['count']} |")
+            if v["data_not_in_enum_omitted"]:
+                out.append(f"  | … +{v['data_not_in_enum_omitted']} more | |")
+        out.append("")
+    if findings["unmatched"]:
+        out += ["## 対応列なし (unmatched)", "", ", ".join(findings["unmatched"]), ""]
+    if findings["warnings"]:
+        out += ["## 警告", ""] + [f"- {w}" for w in findings["warnings"]] + [""]
+    return "\n".join(out) + "\n"
+
+
+def format_enum_summary(findings: dict) -> str:
+    """Format a brief summary of findings."""
+    dead = sum(1 for v in findings["vocabularies"] if v["enum_not_in_data"])
+    return (f"vocabularies={len(findings['vocabularies'])} "
+            f"with_dead_enum={dead} unmatched={len(findings['unmatched'])} "
+            f"warnings={len(findings['warnings'])}")
+
+
+def run_enum_verify(directory, data_paths, threshold=0.5, top=20, out_dir=None) -> dict:
+    """Orchestrate enum verification: load vocabs, read data, verify, emit reports.
+
+    Args:
+        directory: Path to project containing ontology/ontology.json
+        data_paths: List of CSV paths to verify against
+        threshold: Min vocab->column match score (0-1)
+        top: Max data_not_in_enum entries to report per vocab
+        out_dir: Output directory for reports (default: directory/ontology)
+
+    Returns:
+        {"findings": {...}, "written": [json_path, md_path], "summary": "..."}
+
+    Raises:
+        ValueError: If data_paths is non-empty but all CSV files are unreadable.
+    """
+    vocabs = load_vocabularies(directory)
+    columns, warnings = column_counts(data_paths)
+    if data_paths and not columns:
+        raise ValueError("no readable data columns from --data files: " + "; ".join(warnings))
+    result = verify_enums(vocabs, columns, threshold=threshold, top=top)
+    findings = {
+        "meta": {"audited": "ontology/ontology.json", "data": [str(p) for p in data_paths],
+                 "threshold": threshold, "top": top,
+                 "generated_by": "dotmd-parser ontology-verify-enums v4a"},
+        "vocabularies": result["vocabularies"],
+        "unmatched": result["unmatched"],
+        "warnings": warnings,
+    }
+    out = Path(out_dir) if out_dir else (Path(directory).resolve() / "ontology")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / _REPORT_JSON).write_text(emit_enum_report_json(findings), encoding="utf-8")
+    (out / _REPORT_MD).write_text(emit_enum_report_md(findings), encoding="utf-8")
+    return {"findings": findings,
+            "written": [str(out / _REPORT_JSON), str(out / _REPORT_MD)],
+            "summary": format_enum_summary(findings)}
