@@ -586,6 +586,58 @@ dotmd-parser ontology-query ./corpus/ defines feeRate --format json
 推論ステップはありません（例えば subclass/subproperty のエンテールメント
 は展開されません）。推論レイヤーの追加は将来の課題です。
 
+## `ontology-verify-enums` — 統制語彙を CSV データで実在検証
+
+`dotmd-parser ontology ./corpus/` が `ontology.json` を生成したあと、その
+統制語彙（`applicationStatus` のような `skos:ConceptScheme` enum）が実データと
+一致しているかを検証できます:
+
+```bash
+dotmd-parser ontology-verify-enums ./corpus/ \
+  --data ./data/applications.csv --data ./data/events.csv
+```
+
+`./corpus/ontology/ontology.json` と指定した CSV ファイルを読み込み、
+`./corpus/ontology/ontology-enum-report.md` と `ontology-enum-report.json`
+を書き出します。`ontology.yml` は一切読み書きせず、オントロジー自体も
+変更しません — `ontology-audit` と同様、ビルド済みオントロジーの上に
+載る読み取り専用のチェックです。
+
+各語彙について、enum との重なりが最も大きい CSV 列を自動でマッチングし
+（スコアは `shared / |enum|`、共有値数を enum のサイズで割ったもの）、
+マッチした `file:column` を報告します — どの列がどの語彙に対応するかを
+手動で指定する必要はありません。そのうえで 2 種類の不一致を報告します:
+
+- **`enum_not_in_data`** — 語彙で宣言されているが、マッチした列には一度も
+  現れない値。死んだ enum 値や typo の可能性があります。
+- **`data_not_in_enum`** — マッチした列には存在するが、語彙で宣言されて
+  いない値。カバレッジのギャップで、頻度の高い順に上位 N 件を列挙します。
+
+### フラグ
+
+```bash
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --data b.csv --check
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --threshold 0.6 --top 10
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --out ./corpus/ontology/
+```
+
+- `--data` — 検証対象の CSV データファイル（複数指定可、必須）。
+- `--threshold` — 語彙が列にマッチしたとみなす最小スコア `shared/|enum|`
+  （既定 `0.5`）。
+- `--top` — 語彙ごとに報告する `data_not_in_enum` の最大件数、頻度順
+  （既定 `20`）。
+- `--check` — `enum_not_in_data` を持つ語彙が 1 件でもあれば非ゼロ終了
+  します — CI に組み込んで死んだ/typo の enum 値を検知できます。
+  注: `--check` が検証するのはマッチした語彙のみです。対応列がない語彙は
+  `unmatched`（警告）として報告され、check の失敗にはなりません。
+- `--out` — 出力先ディレクトリを上書きします（既定: `<path>/ontology/`）。
+
+前提条件: 先に `dotmd-parser ontology ./corpus/` を実行して `ontology.json`
+を生成しておく必要があります。このサブコマンドは stdlib のみで動作し
+（LLM 不使用、API キー不要）、完全に決定的で、読み取り専用です — オントロジー
+を変更することはありません。検証対象は CSV データのみです。BigQuery
+（などのウェアハウス）テーブルへの直接照合は将来の課題です。
+
 ## 開発
 
 ```bash

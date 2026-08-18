@@ -87,6 +87,7 @@ from dotmd_parser.audit import (
     format_host_agent_plan as _audit_plan,
 )
 from dotmd_parser.query import run_query as _run_query
+from dotmd_parser.enums import run_enum_verify as _run_enum_verify
 
 
 def _maybe_warn_empty(path: str) -> None:
@@ -541,6 +542,28 @@ def cmd_ontology_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ontology_verify_enums(args: argparse.Namespace) -> int:
+    """Verify ontology controlled vocabularies against CSV data."""
+    try:
+        res = _run_enum_verify(args.path, args.data, threshold=args.threshold,
+                               top=args.top, out_dir=args.out)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:      # all --data files unreadable
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    print(f"Wrote {len(res['written'])} file(s):")
+    for f in res["written"]:
+        print(f"  {f}")
+    print(f"  {res['summary']}")
+    for w in res["findings"]["warnings"]:
+        print(f"warning: {w}", file=sys.stderr)
+    if args.check and any(v["enum_not_in_data"] for v in res["findings"]["vocabularies"]):
+        return 1
+    return 0
+
+
 def cmd_ontology_query(args: argparse.Namespace) -> int:
     """Run SPARQL (raw or named) over a built ontology.ttl."""
     try:
@@ -855,6 +878,20 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="Exit non-zero when a CONFIRMED contradiction exists")
     p_audit.set_defaults(func=cmd_ontology_audit)
 
+    p_enums = sub.add_parser("ontology-verify-enums",
+                             help="Verify ontology enums against CSV data (coverage gaps)")
+    p_enums.add_argument("path", help="Corpus dir containing ontology/ontology.json")
+    p_enums.add_argument("--data", action="append", required=True, metavar="CSV",
+                         help="CSV data file (repeatable)")
+    p_enums.add_argument("--threshold", type=float, default=0.5,
+                         help="Match acceptance threshold shared/|enum| (default 0.5)")
+    p_enums.add_argument("--top", type=int, default=20,
+                         help="Max data_not_in_enum values per vocab (default 20)")
+    p_enums.add_argument("--out", help="Output dir (default: <path>/ontology)")
+    p_enums.add_argument("--check", action="store_true",
+                         help="Exit non-zero when any vocabulary has enum values absent from data")
+    p_enums.set_defaults(func=cmd_ontology_verify_enums)
+
     p_query = sub.add_parser("ontology-query",
                              help="Run SPARQL over a built ontology.ttl (needs [rdf])")
     p_query.add_argument("path", help="Corpus dir containing ontology/ontology.ttl")
@@ -954,7 +991,7 @@ def run(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     # Backwards compatibility: `dotmd-parser <path>` with no subcommand → show
-    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit", "ontology-query"}
+    known_cmds = {"init", "index", "check", "affects", "deps", "digest", "tree", "resolve", "analyze", "inventory", "dotmd-index", "show", "plan", "ledger", "risk", "stability", "ontology", "ontology-audit", "ontology-query", "ontology-verify-enums"}
     if args_list and args_list[0] not in known_cmds and not args_list[0].startswith("-"):
         args_list = ["show", *args_list]
     if not args_list:

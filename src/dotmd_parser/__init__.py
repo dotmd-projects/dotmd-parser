@@ -130,6 +130,12 @@ from dotmd_parser.query import (
     named_query,
     load_graph,
 )
+from dotmd_parser.enums import (
+    run_enum_verify,
+    verify_enums,
+    match_vocabulary,
+    load_vocabularies,
+)
 
 __all__ = [
     "__version__",
@@ -238,4 +244,9 @@ __all__ = [
     "run_sparql",
     "named_query",
     "load_graph",
+    # enums
+    "run_enum_verify",
+    "verify_enums",
+    "match_vocabulary",
+    "load_vocabularies",
 ]

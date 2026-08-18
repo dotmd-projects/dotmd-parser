@@ -668,6 +668,59 @@ Note: this queries the *asserted* graph only — there is no OWL reasoner or
 inference step (e.g. subclass/subproperty entailment is not materialized).
 Adding an inference layer remains future work.
 
+## `ontology-verify-enums` — ground controlled vocabularies against CSV data
+
+Once `dotmd-parser ontology ./corpus/` has produced `ontology.json`, check
+whether its controlled vocabularies (`skos:ConceptScheme` enums such as
+`applicationStatus`) actually match real data:
+
+```bash
+dotmd-parser ontology-verify-enums ./corpus/ \
+  --data ./data/applications.csv --data ./data/events.csv
+```
+
+This reads `./corpus/ontology/ontology.json` and the given CSV file(s), and
+writes `./corpus/ontology/ontology-enum-report.md` and
+`ontology-enum-report.json`. It never reads or writes `ontology.yml` and
+never mutates the ontology — this is a read-only check layered on top of
+the built ontology, same as `ontology-audit`.
+
+For each vocabulary it auto-matches the CSV column whose distinct values
+best overlap the enum, scored as `shared / |enum|` (shared values divided
+by enum size), and reports the winning `file:column` — no need to tell it
+which column corresponds to which vocabulary. It then reports two kinds of
+mismatch:
+
+- **`enum_not_in_data`** — values declared in the vocabulary but never seen
+  in the matched column. Likely dead enum values or typos.
+- **`data_not_in_enum`** — values present in the matched column but not
+  declared in the vocabulary. Coverage gaps, listed top-N by frequency.
+
+### Flags
+
+```bash
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --data b.csv --check
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --threshold 0.6 --top 10
+dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --out ./corpus/ontology/
+```
+
+- `--data` — CSV data file to verify against (repeatable, required).
+- `--threshold` — minimum match score `shared/|enum|` for a vocabulary to
+  be considered matched to a column (default `0.5`).
+- `--top` — max number of `data_not_in_enum` values reported per vocabulary,
+  ranked by frequency (default `20`).
+- `--check` — exit non-zero when any vocabulary has `enum_not_in_data`
+  values; wire it into CI to catch dead/typo'd enum values. Note: `--check`
+  verifies only vocabularies that matched a column; vocabularies with no
+  matching column are reported as `unmatched` (a warning), not a check failure.
+- `--out` — overrides the output directory (default: `<path>/ontology/`).
+
+Prerequisite: run `dotmd-parser ontology ./corpus/` first to produce
+`ontology.json`. This subcommand is stdlib-only (no LLM, no API key),
+fully deterministic, and reads only — it never modifies the ontology. It
+verifies against CSV data only; grounding directly against a BigQuery (or
+other warehouse) table remains future work.
+
 ## Claude Code Skill integration
 
 A ready-to-use Claude Code Skill is bundled with the package at
