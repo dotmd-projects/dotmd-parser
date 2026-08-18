@@ -8,9 +8,12 @@ reads the ontology, writes only ontology-abox.* — never mutates the ontology.
 from __future__ import annotations
 
 import csv
+import difflib
 import json
 import re
 from pathlib import Path
+
+from dotmd_parser.ontology import XSD_MAP
 
 
 def load_class_dprops(directory) -> tuple[dict, set, dict]:
@@ -45,3 +48,51 @@ def parse_maps(map_args, class_names) -> dict[str, str]:
             raise ValueError(f"duplicate class in --map: {cls!r}")
         maps[cls] = file.strip()
     return maps
+
+
+def _norm_ident(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, str]:
+    matches: dict[str, str] = {}
+    norm_cols = [(col, _norm_ident(col)) for col in fieldnames]
+    for dp in dprops:
+        pn = _norm_ident(dp["name"])
+        best = None  # (ratio, column)
+        for col, nc in norm_cols:
+            if not nc:
+                continue
+            ratio = difflib.SequenceMatcher(None, pn, nc).ratio()
+            if best is None or ratio > best[0] or (ratio == best[0] and col < best[1]):
+                best = (ratio, col)
+        if best and best[0] >= threshold:
+            matches[dp["name"]] = best[1]
+    return matches
+
+
+def _esc(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+
+
+def _lit(value: str, xsd_type: str) -> str:
+    return f'"{_esc(value)}"^^{XSD_MAP.get(xsd_type, "xsd:string")}'
+
+
+def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[list[str], int]:
+    lines: list[str] = []
+    count = 0
+    for i, row in enumerate(rows, start=1):
+        count += 1
+        subj = f"{prefix}:{class_name}_{i}"
+        lines.append(f"{subj} a {prefix}:{class_name} ;")
+        for dp in dprops:
+            col = prop_col_map.get(dp["name"])
+            if not col:
+                continue
+            val = (row.get(col) or "").strip()
+            if val:
+                lines.append(f"    {prefix}:{dp['name']} {_lit(val, dp.get('type'))} ;")
+        lines[-1] = lines[-1].rstrip(" ;") + " ."   # terminate the subject block
+        lines.append("")
+    return lines, count

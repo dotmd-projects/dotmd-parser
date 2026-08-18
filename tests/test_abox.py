@@ -58,5 +58,37 @@ class TestLoadAndMaps(unittest.TestCase):
             A.parse_maps(["Application=a.csv", "Application=b.csv"], {"Application"})  # dup
 
 
+class TestMatchMaterialize(unittest.TestCase):
+    def _dprops(self):
+        return [{"name": "feeRate", "domain": "Application", "type": "decimal"},
+                {"name": "applicationStatus", "domain": "Application", "type": "string"},
+                {"name": "requestedAmount", "domain": "Application", "type": "decimal"}]
+
+    def test_match_columns(self):
+        m = A.match_columns_to_props(self._dprops(),
+                                     ["fee_rate", "applicationStatus", "note"], 0.6)
+        self.assertEqual(m["feeRate"], "fee_rate")
+        self.assertEqual(m["applicationStatus"], "applicationStatus")
+        self.assertNotIn("requestedAmount", m)          # no column matches
+
+    def test_lit(self):
+        self.assertEqual(A._lit("0.05", "decimal"), '"0.05"^^xsd:decimal')
+        self.assertEqual(A._lit('a"b', "string"), '"a\\"b"^^xsd:string')
+
+    def test_materialize(self):
+        rows = [{"fee_rate": "0.05", "applicationStatus": "買取成立", "note": "x"},
+                {"fee_rate": "", "applicationStatus": "謝絶", "note": ""}]
+        prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
+        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        text = "\n".join(lines)
+        self.assertEqual(count, 2)
+        self.assertIn("ex:Application_1 a ex:Application ;", text)
+        self.assertIn('ex:feeRate "0.05"^^xsd:decimal', text)
+        self.assertIn('ex:applicationStatus "買取成立"^^xsd:string', text)
+        # row 2 has empty fee_rate -> only applicationStatus emitted, block still valid
+        self.assertIn('ex:Application_2 a ex:Application ;', text)
+        self.assertIn('ex:applicationStatus "謝絶"^^xsd:string .', text)  # terminated with .
+
+
 if __name__ == "__main__":
     unittest.main()
