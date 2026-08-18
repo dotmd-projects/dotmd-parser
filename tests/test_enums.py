@@ -160,5 +160,32 @@ class TestEnumRobustness(unittest.TestCase):
                          E.emit_enum_report_md(r2["findings"]))
 
 
+class TestEnumCsvHygiene(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        onto = self.root / "ontology"; onto.mkdir()
+        ir = {"vocabularies": [{"name": "v", "values": ["買取成立", "謝絶"]}]}
+        (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_bom_stripped_from_column_name(self):
+        p = self.root / "bom.csv"
+        p.write_text("﻿status\n買取成立\n謝絶\n", encoding="utf-8")
+        cols, _ = E.column_counts([str(p)])
+        # column name must be "status", not "﻿status"
+        self.assertIn((str(p), "status"), cols)
+
+    def test_md_escapes_pipe_in_value(self):
+        p = self.root / "d.csv"
+        p.write_text("status\n買取成立\n謝絶\na|b\n", encoding="utf-8")
+        res = E.run_enum_verify(self.root, [str(p)])
+        md = E.emit_enum_report_md(res["findings"])
+        self.assertNotIn("| a|b |", md)      # raw unescaped cell must not appear
+        self.assertIn("a\\|b", md)           # escaped form present
+
+
 if __name__ == "__main__":
     unittest.main()

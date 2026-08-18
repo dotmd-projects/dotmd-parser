@@ -29,7 +29,7 @@ def column_counts(csv_paths) -> tuple[dict, list[str]]:
     warnings: list[str] = []
     for p in csv_paths:
         try:
-            with open(p, "r", encoding="utf-8", newline="") as f:
+            with open(p, "r", encoding="utf-8-sig", newline="") as f:
                 reader = csv.DictReader(f)
                 fieldnames = reader.fieldnames or []
                 counters = {col: Counter() for col in fieldnames}
@@ -169,7 +169,8 @@ def emit_enum_report_md(findings: dict) -> str:
             out.append("  | value | count |")
             out.append("  |---|---|")
             for d in v["data_not_in_enum"]:
-                out.append(f"  | {d['value']} | {d['count']} |")
+                cell = str(d["value"]).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+                out.append(f"  | {cell} | {d['count']} |")
             if v["data_not_in_enum_omitted"]:
                 out.append(f"  | … +{v['data_not_in_enum_omitted']} more | |")
         out.append("")

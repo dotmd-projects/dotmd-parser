@@ -710,7 +710,9 @@ dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --out ./corpus/ontolog
 - `--top` — max number of `data_not_in_enum` values reported per vocabulary,
   ranked by frequency (default `20`).
 - `--check` — exit non-zero when any vocabulary has `enum_not_in_data`
-  values; wire it into CI to catch dead/typo'd enum values.
+  values; wire it into CI to catch dead/typo'd enum values. Note: `--check`
+  verifies only vocabularies that matched a column; vocabularies with no
+  matching column are reported as `unmatched` (a warning), not a check failure.
 - `--out` — overrides the output directory (default: `<path>/ontology/`).
 
 Prerequisite: run `dotmd-parser ontology ./corpus/` first to produce

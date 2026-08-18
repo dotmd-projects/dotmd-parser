@@ -628,6 +628,8 @@ dotmd-parser ontology-verify-enums ./corpus/ --data a.csv --out ./corpus/ontolog
   （既定 `20`）。
 - `--check` — `enum_not_in_data` を持つ語彙が 1 件でもあれば非ゼロ終了
   します — CI に組み込んで死んだ/typo の enum 値を検知できます。
+  注: `--check` が検証するのはマッチした語彙のみです。対応列がない語彙は
+  `unmatched`（警告）として報告され、check の失敗にはなりません。
 - `--out` — 出力先ディレクトリを上書きします（既定: `<path>/ontology/`）。
 
 前提条件: 先に `dotmd-parser ontology ./corpus/` を実行して `ontology.json`
