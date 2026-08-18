@@ -51,5 +51,52 @@ class TestLoadAndCount(unittest.TestCase):
         self.assertTrue(warnings and "nope.csv" in warnings[0])
 
 
+class TestMatchAndVerify(unittest.TestCase):
+    def _columns(self):
+        return {
+            ("t.csv", "status"): Counter({"買取成立": 500, "謝絶": 120, "キャンセル": 30, "却下": 12}),
+            ("t.csv", "seg"): Counter({"a_初回": 300, "b_リピーター": 700}),
+        }
+
+    def test_match_picks_best_column(self):
+        vocab = {"name": "applicationStatus",
+                 "values": ["買取成立", "謝絶", "キャンセル", "未処理"]}
+        m = E.match_vocabulary(vocab, self._columns(), 0.5)
+        self.assertEqual((m["file"], m["column"]), ("t.csv", "status"))
+        self.assertEqual(m["shared"], 3)
+        self.assertEqual(m["score"], 0.75)
+
+    def test_match_none_when_no_overlap(self):
+        vocab = {"name": "foo", "values": ["x", "y", "z"]}
+        self.assertIsNone(E.match_vocabulary(vocab, self._columns(), 0.5))
+
+    def test_match_none_below_threshold(self):
+        vocab = {"name": "applicationStatus",
+                 "values": ["買取成立", "謝絶", "キャンセル", "未処理"]}
+        self.assertIsNone(E.match_vocabulary(vocab, self._columns(), 0.9))  # 0.75 < 0.9
+
+    def test_verify_enums(self):
+        vocabs = [{"name": "applicationStatus",
+                   "values": ["買取成立", "謝絶", "キャンセル", "未処理"]},
+                  {"name": "foo", "values": ["x", "y", "z"]}]
+        out = E.verify_enums(vocabs, self._columns(), threshold=0.5, top=20)
+        app = next(v for v in out["vocabularies"] if v["name"] == "applicationStatus")
+        self.assertEqual(app["matched"]["column"], "status")
+        self.assertNotIn("counter", app["matched"])            # internal counter stripped
+        self.assertEqual(app["enum_not_in_data"], ["未処理"])
+        self.assertEqual(app["data_not_in_enum"], [{"value": "却下", "count": 12}])
+        self.assertEqual(app["coverage"], 0.75)
+        self.assertIn("foo", out["unmatched"])
+
+    def test_top_n_cap(self):
+        cols = {("t.csv", "c"): Counter({"買取成立": 1, "謝絶": 1,
+                                         "e1": 9, "e2": 8, "e3": 7})}
+        vocabs = [{"name": "v", "values": ["買取成立", "謝絶"]}]
+        out = E.verify_enums(vocabs, cols, threshold=0.5, top=2)
+        v = out["vocabularies"][0]
+        self.assertEqual([d["value"] for d in v["data_not_in_enum"]], ["e1", "e2"])  # count desc
+        self.assertEqual(v["data_not_in_enum_omitted"], 1)                            # e3 omitted
+
+
 if __name__ == "__main__":
     unittest.main()
