@@ -132,5 +132,33 @@ class TestRunEnumVerify(unittest.TestCase):
             E.run_enum_verify(self.root, [str(self.root / "nope.csv")])
 
 
+class TestEnumRobustness(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        onto = self.root / "ontology"; onto.mkdir()
+        ir = {"vocabularies": [{"name": "applicationStatus",
+                                "values": ["買取成立", "謝絶", "キャンセル", "未処理"]}]}
+        (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+        self.good = self.root / "good.csv"
+        _write_csv(self.good, [{"status": "買取成立"}, {"status": "謝絶"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_bad_csv_skipped_with_warning(self):
+        bad = self.root / "bad.csv"  # does not exist -> unreadable
+        res = E.run_enum_verify(self.root, [str(self.good), str(bad)])
+        self.assertTrue(any("bad.csv" in w for w in res["findings"]["warnings"]))
+        # good.csv still produced a match
+        self.assertIsNotNone(res["findings"]["vocabularies"][0]["matched"])
+
+    def test_report_md_deterministic(self):
+        r1 = E.run_enum_verify(self.root, [str(self.good)])
+        r2 = E.run_enum_verify(self.root, [str(self.good)])
+        self.assertEqual(E.emit_enum_report_md(r1["findings"]),
+                         E.emit_enum_report_md(r2["findings"]))
+
+
 if __name__ == "__main__":
     unittest.main()

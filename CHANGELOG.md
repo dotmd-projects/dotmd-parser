@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `ontology-verify-enums` subcommand: ground ontology controlled vocabularies
+  against CSV data. Auto-matches each vocabulary to the best-overlapping column
+  (by shared/|enum|) and reports enum values absent from data (dead) and data
+  values absent from the enum (coverage gaps, top-N by frequency). Emits
+  ontology-enum-report.{md,json}; stdlib-only, deterministic, reads only.
+  `--check` gate on dead enum values.
 - `ontology-query` subcommand: run SPARQL over a built `ontology.ttl` via
   rdflib (`[rdf]` extra). Raw `--sparql` passthrough (SELECT/ASK/CONSTRUCT/DESCRIBE)
   plus named queries (`properties`/`relations`/`defines`/`list`) as
