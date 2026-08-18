@@ -136,6 +136,12 @@ from dotmd_parser.enums import (
     match_vocabulary,
     load_vocabularies,
 )
+from dotmd_parser.abox import (
+    run_abox,
+    materialize_class,
+    match_columns_to_props,
+    load_class_dprops,
+)
 
 __all__ = [
     "__version__",
@@ -249,4 +255,9 @@ __all__ = [
     "verify_enums",
     "match_vocabulary",
     "load_vocabularies",
+    # abox
+    "run_abox",
+    "materialize_class",
+    "match_columns_to_props",
+    "load_class_dprops",
 ]

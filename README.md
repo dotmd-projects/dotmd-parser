@@ -721,6 +721,52 @@ fully deterministic, and reads only — it never modifies the ontology. It
 verifies against CSV data only; grounding directly against a BigQuery (or
 other warehouse) table remains future work.
 
+## `ontology-abox` — materialize instances (ABox) from CSV data
+
+Once `dotmd-parser ontology ./corpus/` has produced `ontology.json`, turn real
+CSV rows into ontology instances:
+
+```bash
+dotmd-parser ontology-abox ./corpus/ \
+  --map Application=./data/applications.csv --map Purchase=./data/purchases.csv
+```
+
+Each `--map Class=csv` assigns a CSV file to an ontology class. For that
+class, `ontology-abox` reads `./corpus/ontology/ontology.json`, auto-matches
+the CSV's columns to the class's datatype properties by normalized name
+similarity (`--threshold`, default `0.6`), and turns every CSV row into an
+instance `<prefix>:<Class>_<N>` typed as the class, with a typed literal for
+each matched property (unmatched columns are skipped, not guessed at).
+
+It writes `./corpus/ontology/ontology-abox.ttl` (the instances only — no
+class/property definitions) and `ontology-abox-report.json` (matched and
+unmatched columns per class, plus instance counts). Load `ontology-abox.ttl`
+alongside `ontology.ttl` (the TBox) to query real data with `ontology-query`,
+or as input to a future reasoner.
+
+### Flags
+
+```bash
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map Purchase=b.csv
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --threshold 0.8
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/ontology/
+```
+
+- `--map` — `Class=csv` mapping a CSV file to an ontology class (repeatable,
+  required). The class must exist in `ontology.json`; classes and CSVs must
+  each appear at most once.
+- `--threshold` — minimum normalized name-similarity score for a CSV column
+  to be matched to a datatype property (default `0.6`).
+- `--out` — overrides the output directory (default: `<path>/ontology/`).
+
+Prerequisite: run `dotmd-parser ontology ./corpus/` first to produce
+`ontology.json`. This subcommand is stdlib-only (no LLM, no API key), fully
+deterministic, and only reads the ontology — it never mutates `ontology.yml`
+or `ontology.json`. It handles **datatype properties only** in this version:
+each literal value comes straight from a matched CSV column. Object-property
+links between instances (e.g. wiring a foreign-key column to another class's
+instances) are future work.
+
 ## Claude Code Skill integration
 
 A ready-to-use Claude Code Skill is bundled with the package at
