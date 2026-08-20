@@ -10,14 +10,11 @@ from __future__ import annotations
 import difflib
 import json
 import os
-import re
 from pathlib import Path
 
 from dotmd_parser import llm
 from dotmd_parser.analyze import scan_documents
 from dotmd_parser.ontology import _norm
-
-_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 
 
 def load_ir(directory: str | Path) -> dict:
@@ -30,27 +27,14 @@ def load_ir(directory: str | Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _known_terms(ir: dict) -> set[str]:
-    names: set[str] = set()
-    for c in ir.get("classes", []):
-        names.add(_norm(c["name"]))
-    for dp in ir.get("datatype_properties", []):
-        names.add(_norm(dp["name"]))
-    for op in ir.get("object_properties", []):
-        names.add(_norm(op["name"]))
-    for v in ir.get("vocabularies", []):
-        names.add(_norm(v["name"]))
-    return names
-
-
 def structural_findings(ir: dict) -> list[dict]:
     """Deterministic integrity findings over the IR (no LLM)."""
     findings: list[dict] = []
 
-    # merge-conflict promotion (v1 merge_ontology already flags naming conflicts)
+    # promote recorded conflicts: naming conflicts (from merge) vs text-extracted contradictions
     for c in ir.get("conflicts", []):
         findings.append({
-            "kind": "merge-conflict",
+            "kind": "merge-conflict" if c.get("kind") == "naming" else "recorded-conflict",
             "detail": c.get("detail", ""),
             "provenance": list(c.get("provenance") or []),
         })
@@ -67,17 +51,6 @@ def structural_findings(ir: dict) -> list[dict]:
                 })
             else:
                 seen[val] = v["name"]
-
-    # dangling-invariant-ref: an invariant whose ASCII word tokens match no known term
-    known = _known_terms(ir)
-    for inv in ir.get("invariants", []):
-        tokens = {_norm(t) for t in _WORD_RE.findall(inv.get("statement", ""))}
-        if tokens and not (tokens & known):
-            findings.append({
-                "kind": "dangling-invariant-ref",
-                "detail": f'invariant {inv.get("id","?")} references no known ontology term',
-                "provenance": list(inv.get("provenance") or []),
-            })
 
     return findings
 
