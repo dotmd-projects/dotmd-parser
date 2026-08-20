@@ -577,8 +577,9 @@ What it reports:
   spellings of the same channel name) found via deterministic difflib
   candidate generation, then adjudicated by the LLM as `same`/`different`.
   This is propose-only: nothing is renamed or merged automatically.
-- **Structural findings** — deterministic, no LLM involved: dangling
-  invariant references, promoted merge conflicts, vocabulary overlaps.
+- **Structural findings** — deterministic, no LLM involved: recorded/merge
+  conflicts (naming conflicts labeled `merge-conflict`, text-extracted contradictions
+  `recorded-conflict`), and vocabulary overlaps.
 - **Open questions** — surfaced as a byproduct of contradiction detection
   when the model can't fully resolve a claim.
 
