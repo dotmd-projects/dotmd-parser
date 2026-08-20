@@ -592,9 +592,14 @@ def cmd_ontology_abox(args: argparse.Namespace) -> int:
 
 def cmd_ontology_query(args: argparse.Namespace) -> int:
     """Run SPARQL (raw or named) over a built ontology.ttl."""
+    if args.with_abox:
+        abox_ttl = Path(args.path) / "ontology" / "ontology-abox.ttl"
+        if not abox_ttl.exists():
+            print("warning: --with-abox set but ontology-abox.ttl not found; "
+                  "querying TBox only", file=sys.stderr)
     try:
         out = _run_query(args.path, sparql=args.sparql, kind=args.kind,
-                         arg=args.arg, fmt=args.format)
+                         arg=args.arg, fmt=args.format, with_abox=args.with_abox)
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -938,6 +943,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_query.add_argument("--sparql", help="Raw SPARQL query (mutually exclusive with a named query)")
     p_query.add_argument("--format", choices=["table", "json"], default="table",
                          help="Output format (default: table)")
+    p_query.add_argument("--with-abox", action="store_true", dest="with_abox",
+                         help="Also load ontology-abox.ttl (instances) into the query graph")
     p_query.set_defaults(func=cmd_ontology_query)
 
     p_inv = sub.add_parser(

@@ -59,6 +59,25 @@ class TestLoadGraph(unittest.TestCase):
         self.assertIn("prefix", meta)
         self.assertTrue(meta["namespace"])  # non-empty string
 
+    def test_with_abox_missing_file_does_not_raise(self):
+        _make_ontology(self.root)
+        # No ontology-abox.ttl written; with_abox=True should just skip it.
+        graph, meta = Q.load_graph(self.root, with_abox=True)
+        self.assertGreater(len(graph), 0)
+
+    def test_with_abox_true_loads_instances_into_graph(self):
+        _make_ontology(self.root)
+        abox_ttl = (
+            "@prefix ex: <https://ex.org/o#> .\n"
+            "ex:Application_1 a ex:Application .\n"
+        )
+        (self.root / "ontology" / "ontology-abox.ttl").write_text(
+            abox_ttl, encoding="utf-8"
+        )
+        graph_without, _ = Q.load_graph(self.root, with_abox=False)
+        graph_with, _ = Q.load_graph(self.root, with_abox=True)
+        self.assertGreater(len(graph_with), len(graph_without))
+
 
 class TestRunSparql(unittest.TestCase):
     def setUp(self):
@@ -147,6 +166,39 @@ class TestNamedQuery(unittest.TestCase):
     def test_unknown_kind_raises(self):
         with self.assertRaises(ValueError):
             Q.named_query(self.graph, self.meta, "bogus", "x")
+
+
+class TestRunQueryWithAbox(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _make_ontology(self.root)
+        abox_ttl = (
+            "@prefix ex: <https://ex.org/o#> .\n"
+            "ex:Application_1 a ex:Application .\n"
+        )
+        (self.root / "ontology" / "ontology-abox.ttl").write_text(
+            abox_ttl, encoding="utf-8"
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_with_abox_true_sees_instance(self):
+        out = Q.run_query(
+            self.root,
+            sparql="SELECT ?s WHERE { ?s a <https://ex.org/o#Application> }",
+            with_abox=True,
+        )
+        self.assertIn("Application_1", out)
+
+    def test_with_abox_false_no_instance(self):
+        out = Q.run_query(
+            self.root,
+            sparql="SELECT ?s WHERE { ?s a <https://ex.org/o#Application> }",
+            with_abox=False,
+        )
+        self.assertNotIn("Application_1", out)
 
 
 class TestRunQuery(unittest.TestCase):
