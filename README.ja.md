@@ -582,6 +582,10 @@ dotmd-parser ontology-query ./corpus/ list vocabularies
 dotmd-parser ontology-query ./corpus/ defines feeRate --format json
 ```
 
+`--with-abox` — オプション: `ontology-abox.ttl`（v4c インスタンス）をクエリグラフに
+読み込み、実データ・インスタンスチェーンのクエリを有効にします。既定は off
+（TBox `ontology.ttl` のみをクエリ）。
+
 注意: これは*アサートされたグラフのみ*をクエリします — OWL 推論器や
 推論ステップはありません（例えば subclass/subproperty のエンテールメント
 は展開されません）。推論レイヤーの追加は将来の課題です。

@@ -43,6 +43,15 @@ follows [Semantic Versioning](https://semver.org/).
   score (`--eval`).
   設計: `docs/superpowers/specs/2026-08-05-ontology-builder-design.md`
 
+### Changed
+- `ontology-query --with-abox`: optionally load `ontology-abox.ttl` (v4c
+  instances) into the query graph so instance data and chains can be queried.
+  Default is off (queries the TBox `ontology.ttl` only).
+- `ontology-audit` structural findings refined: removed the `dangling-invariant-ref`
+  check (it false-flagged prose/derived-metric invariants with dangling refs);
+  recorded conflicts are now labeled `merge-conflict` only for true naming conflicts,
+  with text-extracted contradictions labeled `recorded-conflict` instead.
+
 ## [0.10.0] - 2026-06-22
 
 ### Added

@@ -664,6 +664,10 @@ output on repeated runs.
 dotmd-parser ontology-query ./corpus/ defines feeRate --format json
 ```
 
+`--with-abox` — optionally load `ontology-abox.ttl` (v4c instances) into the
+query graph, enabling queries over real data and instance chains. Default is off
+(queries the TBox `ontology.ttl` only).
+
 Note: this queries the *asserted* graph only — there is no OWL reasoner or
 inference step (e.g. subclass/subproperty entailment is not materialized).
 Adding an inference layer remains future work.
