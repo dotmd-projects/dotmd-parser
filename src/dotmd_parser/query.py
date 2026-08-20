@@ -25,8 +25,14 @@ def _require_rdflib():
         ) from e
 
 
-def load_graph(directory) -> tuple[object, dict]:
-    """Parse <dir>/ontology/ontology.ttl and resolve the ontology namespace/prefix."""
+def load_graph(directory, with_abox: bool = False) -> tuple[object, dict]:
+    """Parse <dir>/ontology/ontology.ttl and resolve the ontology namespace/prefix.
+
+    When with_abox is True, also parse <dir>/ontology/ontology-abox.ttl (instances)
+    into the same graph if it exists. A missing abox file is not an error — the
+    TBox-only graph is returned and the caller (CLI) is responsible for surfacing
+    a note about the skip.
+    """
     Graph = _require_rdflib()
     base = Path(directory).resolve()
     ttl = base / "ontology" / "ontology.ttl"
@@ -36,6 +42,11 @@ def load_graph(directory) -> tuple[object, dict]:
         )
     graph = Graph()
     graph.parse(data=ttl.read_text(encoding="utf-8"), format="turtle")
+
+    if with_abox:
+        abox_ttl = base / "ontology" / "ontology-abox.ttl"
+        if abox_ttl.exists():
+            graph.parse(data=abox_ttl.read_text(encoding="utf-8"), format="turtle")
 
     meta = _resolve_meta(base, graph)
     return graph, meta
@@ -163,13 +174,14 @@ def format_result(result: dict, fmt: str = "table") -> str:
     return "\n".join(lines)
 
 
-def run_query(directory, *, sparql=None, kind=None, arg=None, fmt="table") -> str:
+def run_query(directory, *, sparql=None, kind=None, arg=None, fmt="table",
+              with_abox=False) -> str:
     """Load graph, dispatch to run_sparql or named_query, and format result.
 
     Enforces mode exclusivity: exactly one of sparql or kind must be provided.
     """
     if bool(sparql) == bool(kind):
         raise ValueError("provide exactly one of --sparql or a named query (kind)")
-    graph, meta = load_graph(directory)
+    graph, meta = load_graph(directory, with_abox=with_abox)
     result = run_sparql(graph, sparql) if sparql else named_query(graph, meta, kind, arg)
     return format_result(result, fmt)

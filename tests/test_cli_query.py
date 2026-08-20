@@ -50,6 +50,19 @@ class TestCliQuery(unittest.TestCase):
             cli_run(["ontology-query", str(self.root), "--sparql", "NOT SPARQL"])
         self.assertEqual(cm.exception.code, 1)
 
+    def test_with_abox_flag_exits_0_when_abox_present(self):
+        _make(self.root)
+        abox_ttl = (
+            "@prefix ex: <https://ex.org/o#> .\n"
+            "ex:Application_1 a ex:Application .\n"
+        )
+        (self.root / "ontology" / "ontology-abox.ttl").write_text(
+            abox_ttl, encoding="utf-8"
+        )
+        with self.assertRaises(SystemExit) as cm:
+            cli_run(["ontology-query", str(self.root), "list", "classes", "--with-abox"])
+        self.assertEqual(cm.exception.code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

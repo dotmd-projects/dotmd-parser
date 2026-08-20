@@ -577,8 +577,9 @@ What it reports:
   spellings of the same channel name) found via deterministic difflib
   candidate generation, then adjudicated by the LLM as `same`/`different`.
   This is propose-only: nothing is renamed or merged automatically.
-- **Structural findings** — deterministic, no LLM involved: dangling
-  invariant references, promoted merge conflicts, vocabulary overlaps.
+- **Structural findings** — deterministic, no LLM involved: recorded/merge
+  conflicts (naming conflicts labeled `merge-conflict`, text-extracted contradictions
+  `recorded-conflict`), and vocabulary overlaps.
 - **Open questions** — surfaced as a byproduct of contradiction detection
   when the model can't fully resolve a claim.
 
@@ -663,6 +664,10 @@ output on repeated runs.
 ```bash
 dotmd-parser ontology-query ./corpus/ defines feeRate --format json
 ```
+
+`--with-abox` — optionally load `ontology-abox.ttl` (v4c instances) into the
+query graph, enabling queries over real data and instance chains. Default is off
+(queries the TBox `ontology.ttl` only).
 
 Note: this queries the *asserted* graph only — there is no OWL reasoner or
 inference step (e.g. subclass/subproperty entailment is not materialized).

@@ -498,7 +498,7 @@ dotmd-parser ontology-audit ./corpus/
   `same`/`different` を判定して見つけます。あくまで提案どまりで、自動での
   リネームやマージは行いません。
 - **構造的所見（structural findings）** — LLM 不使用の決定的なもの:
-  宙ぶらりんの不変条件参照、昇格されたマージ衝突、語彙の重複。
+  記録済み矛盾/マージ衝突（naming 衝突は `merge-conflict`、本文抽出の矛盾は `recorded-conflict`）と語彙の重複。
 - **未解決事項（open questions）** — 矛盾検出の副産物として、モデルが
   クレームを完全には解決しきれなかった場合に表出します。
 
@@ -581,6 +581,10 @@ dotmd-parser ontology-query ./corpus/ list vocabularies
 ```bash
 dotmd-parser ontology-query ./corpus/ defines feeRate --format json
 ```
+
+`--with-abox` — オプション: `ontology-abox.ttl`（v4c インスタンス）をクエリグラフに
+読み込み、実データ・インスタンスチェーンのクエリを有効にします。既定は off
+（TBox `ontology.ttl` のみをクエリ）。
 
 注意: これは*アサートされたグラフのみ*をクエリします — OWL 推論器や
 推論ステップはありません（例えば subclass/subproperty のエンテールメント

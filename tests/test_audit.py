@@ -38,14 +38,23 @@ class TestStructural(unittest.TestCase):
         out = A.structural_findings(ir)
         self.assertTrue(any(f["kind"] == "vocab-overlap" and "謝絶" in f["detail"] for f in out))
 
-    def test_dangling_invariant_ref(self):
-        # invariant mentions no known ontology term at all
-        ir = _ir(classes=[{"name": "Application", "label_ja": "申請", "domain_group": "取引",
-                           "provenance": ["a.md"]}],
-                 invariants=[{"id": "x", "statement": "Zzz relates to Qqq", "kind": "constraint",
-                              "provenance": ["a.md"]}])
+    def test_contradiction_conflict_not_mislabeled_merge(self):
+        # text-extracted contradiction (kind: "contradiction") must NOT become merge-conflict
+        ir = _ir(conflicts=[{"kind": "contradiction",
+                             "detail": "審査CV(681) < 申請CV(1290)",
+                             "provenance": ["B-1c.md"]}])
         out = A.structural_findings(ir)
-        self.assertTrue(any(f["kind"] == "dangling-invariant-ref" for f in out))
+        self.assertTrue(any(f["kind"] == "recorded-conflict" and "審査CV" in f["detail"]
+                            for f in out))
+        self.assertFalse(any(f["kind"] == "merge-conflict" for f in out))
+
+    def test_prose_invariant_produces_no_dangling_ref_finding(self):
+        # prose/derived-metric invariants intentionally reference terms not modeled
+        # in the ontology; this must not produce a dangling-invariant-ref finding
+        ir = _ir(invariants=[{"id": "roas", "statement": "ROAS = 申請件数単価 ÷ 申請CPA",
+                              "kind": "identity", "provenance": ["a.md"]}])
+        out = A.structural_findings(ir)
+        self.assertFalse(any(f["kind"] == "dangling-invariant-ref" for f in out))
 
     def test_deterministic(self):
         ir = _ir(vocabularies=[{"name": "v1", "values": ["謝絶"], "provenance": ["a.md"]},
@@ -211,8 +220,6 @@ class TestAuditRobustness(unittest.TestCase):
         self.assertIsInstance(out, list)
         cands = A.namematch_candidates(ir)
         self.assertIsInstance(cands, list)
-        known = A._known_terms(ir)
-        self.assertIsInstance(known, set)
         terms = A._surface_terms(ir)
         self.assertIsInstance(terms, list)
         summary = A._ontology_summary(ir)
