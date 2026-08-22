@@ -13,6 +13,7 @@ import json
 import re
 from pathlib import Path
 
+from dotmd_parser.enums import load_vocabularies
 from dotmd_parser.ontology import XSD_MAP
 
 
@@ -48,6 +49,23 @@ def parse_maps(map_args, class_names) -> dict[str, str]:
             raise ValueError(f"duplicate class in --map: {cls!r}")
         maps[cls] = file.strip()
     return maps
+
+
+def parse_map_cols(mapcol_args, dprops_by_class) -> dict:
+    """Parse ["Class.prop=column", ...] -> {Class: {prop: column}}. Validate class+prop."""
+    out: dict = {}
+    for arg in mapcol_args or []:
+        if "=" not in arg or "." not in arg.split("=", 1)[0]:
+            raise ValueError(f"bad --map-col (expected Class.prop=column): {arg!r}")
+        lhs, _, col = arg.partition("=")
+        cls, _, prop = lhs.strip().partition(".")
+        cls, prop, col = cls.strip(), prop.strip(), col.strip()
+        if cls not in dprops_by_class:
+            raise ValueError(f"unknown class in --map-col: {cls!r}")
+        if prop not in {dp["name"] for dp in dprops_by_class[cls]}:
+            raise ValueError(f"{prop!r} is not a datatype property of {cls!r}")
+        out.setdefault(cls, {})[prop] = col
+    return out
 
 
 def _norm_ident(s: str) -> str:
@@ -153,9 +171,12 @@ def format_abox_summary(findings: dict) -> str:
             f"warnings={len(findings['warnings'])}")
 
 
-def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
+def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dict:
     meta, class_names, dprops_by_class = load_class_dprops(directory)
     prefix = meta["prefix"]
+    vocab_values = {v["name"]: {x.strip() for x in (v.get("values") or []) if x and x.strip()}
+                    for v in load_vocabularies(directory)}
+    map_cols = map_cols or {}
     class_reports = []
     warnings: list[str] = []
     blocks: list[list[str]] = []
@@ -168,14 +189,20 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
         except (OSError, UnicodeDecodeError, csv.Error) as e:
             raise ValueError(f"could not read {file}: {e}") from e
         dprops = dprops_by_class.get(cls, [])
-        prop_col, _ = match_columns_to_props(dprops, fieldnames, threshold)
+        columns_values = {col: {(r.get(col) or "").strip() for r in rows if (r.get(col) or "").strip()}
+                          for col in fieldnames}
+        prop_col, method = match_columns_to_props(
+            dprops, fieldnames, threshold,
+            columns_values=columns_values, vocab_values=vocab_values,
+            explicit=map_cols.get(cls))
         lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
         blocks.append(lines)
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]
         if not prop_col:
             warnings.append(f"class {cls} matched no columns; only rdf:type materialized")
         class_reports.append({"class": cls, "file": str(file), "instances": count,
-                              "matched": prop_col, "unmatched_props": unmatched})
+                              "matched": prop_col, "match_method": method,
+                              "unmatched_props": unmatched})
 
     findings = {
         "meta": {"audited": "ontology/ontology.json", "namespace": meta["namespace"],

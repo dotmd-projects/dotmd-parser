@@ -208,5 +208,48 @@ class TestMatchPrecedence(unittest.TestCase):
         self.assertEqual(method["registeredDate"], "name")
 
 
+class TestRunAboxValueMatch(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        onto = self.root / "ontology"; onto.mkdir()
+        ir = {"meta": {"namespace": "https://ex.org/o#", "prefix": "ex"},
+              "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+              "datatype_properties": [
+                  {"name": "applicationStatus", "domain": "Application", "type": "string", "enum": "applicationStatus"},
+                  {"name": "requestedAmount", "domain": "Application", "type": "decimal", "enum": None}],
+              "vocabularies": [{"name": "applicationStatus", "values": ["謝絶", "キャンセル", "未処理"]}]}
+        (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
+        self.csv = self.root / "deal.csv"
+        _write_csv(self.csv, [{"deal_status_name": "謝絶", "offer_price": "1000", "collected_amount": "900"},
+                              {"deal_status_name": "キャンセル", "offer_price": "2000", "collected_amount": "0"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_enum_prop_value_matched(self):
+        res = A.run_abox(self.root, {"Application": str(self.csv)})
+        c = res["findings"]["classes"][0]
+        # applicationStatus (enum) value-matches deal_status_name despite name dissimilarity
+        self.assertEqual(c["matched"]["applicationStatus"], "deal_status_name")
+        self.assertEqual(c["match_method"]["applicationStatus"], "value")
+
+    def test_map_col_override(self):
+        res = A.run_abox(self.root, {"Application": str(self.csv)},
+                         map_cols={"Application": {"requestedAmount": "offer_price"}})
+        c = res["findings"]["classes"][0]
+        self.assertEqual(c["matched"]["requestedAmount"], "offer_price")
+        self.assertEqual(c["match_method"]["requestedAmount"], "explicit")
+
+    def test_parse_map_cols_errors(self):
+        dpc = {"Application": [{"name": "requestedAmount"}]}
+        with self.assertRaises(ValueError):
+            A.parse_map_cols(["Application.requestedAmount"], dpc)         # no '='
+        with self.assertRaises(ValueError):
+            A.parse_map_cols(["Bogus.x=col"], dpc)                        # unknown class
+        with self.assertRaises(ValueError):
+            A.parse_map_cols(["Application.nope=col"], dpc)               # prop not a dprop
+
+
 if __name__ == "__main__":
     unittest.main()
