@@ -54,12 +54,46 @@ def _norm_ident(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, str]:
-    matches: dict[str, str] = {}
+def match_columns_to_props(dprops, fieldnames, threshold: float, *,
+                           columns_values=None, vocab_values=None, explicit=None) -> tuple[dict, dict]:
+    """Match each datatype property to a CSV column.
+
+    Precedence: explicit (--map-col) > value-overlap (enum props) > difflib name similarity.
+    Returns (matches, method) where method[prop] in {"explicit","value","name"}.
+    """
+    explicit = explicit or {}
+    vocab_values = vocab_values or {}
+    columns_values = columns_values or {}
+    fieldset = set(fieldnames)
     norm_cols = [(col, _norm_ident(col)) for col in fieldnames]
+
+    matches: dict[str, str] = {}
+    method: dict[str, str] = {}
     # Note: a single column may be selected by more than one property (allowed by design).
     for dp in dprops:
-        pn = _norm_ident(dp["name"])
+        name = dp["name"]
+        # 1) explicit override
+        if name in explicit and explicit[name] in fieldset:
+            matches[name] = explicit[name]
+            method[name] = "explicit"
+            continue
+        # 2) value-overlap for enum-typed props
+        enum_name = dp.get("enum")
+        E = vocab_values.get(enum_name) if enum_name else None
+        if E:
+            best = None  # (shared, column)
+            for col in fieldnames:
+                shared = len(E & columns_values.get(col, set()))
+                if shared == 0:
+                    continue
+                if best is None or shared > best[0] or (shared == best[0] and col < best[1]):
+                    best = (shared, col)
+            if best and best[0] >= 2 and best[0] / len(E) >= threshold:
+                matches[name] = best[1]
+                method[name] = "value"
+                continue
+        # 3) name similarity (difflib)
+        pn = _norm_ident(name)
         best = None  # (ratio, column)
         for col, nc in norm_cols:
             if not nc:
@@ -68,8 +102,9 @@ def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, st
             if best is None or ratio > best[0] or (ratio == best[0] and col < best[1]):
                 best = (ratio, col)
         if best and best[0] >= threshold:
-            matches[dp["name"]] = best[1]
-    return matches
+            matches[name] = best[1]
+            method[name] = "name"
+    return matches, method
 
 
 def _esc(value: str) -> str:
@@ -133,7 +168,7 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
         except (OSError, UnicodeDecodeError, csv.Error) as e:
             raise ValueError(f"could not read {file}: {e}") from e
         dprops = dprops_by_class.get(cls, [])
-        prop_col = match_columns_to_props(dprops, fieldnames, threshold)
+        prop_col, _ = match_columns_to_props(dprops, fieldnames, threshold)
         lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
         blocks.append(lines)
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]

@@ -72,8 +72,8 @@ class TestMatchMaterialize(unittest.TestCase):
                 {"name": "requestedAmount", "domain": "Application", "type": "decimal"}]
 
     def test_match_columns(self):
-        m = A.match_columns_to_props(self._dprops(),
-                                     ["fee_rate", "applicationStatus", "note"], 0.6)
+        m, _method = A.match_columns_to_props(self._dprops(),
+                                              ["fee_rate", "applicationStatus", "note"], 0.6)
         self.assertEqual(m["feeRate"], "fee_rate")
         self.assertEqual(m["applicationStatus"], "applicationStatus")
         self.assertNotIn("requestedAmount", m)          # no column matches
@@ -157,9 +157,55 @@ class TestAboxDeterminism(unittest.TestCase):
         meta = {"namespace": "https://ex.org/o#", "prefix": "ex"}
         dprops = [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
         rows = [{"fee_rate": "0.05"}, {"fee_rate": "0.10"}]
-        pc = A.match_columns_to_props(dprops, ["fee_rate"], 0.6)
+        pc, _method = A.match_columns_to_props(dprops, ["fee_rate"], 0.6)
         lines, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
         self.assertEqual(A.emit_abox_ttl(meta, [lines]), A.emit_abox_ttl(meta, [lines]))
+
+
+class TestMatchPrecedence(unittest.TestCase):
+    def _dprops(self):
+        return [
+            {"name": "applicationStatus", "domain": "Application", "type": "string", "enum": "applicationStatus"},
+            {"name": "customerSegment", "domain": "Application", "type": "string", "enum": "customerSegment"},
+            {"name": "requestedAmount", "domain": "Application", "type": "decimal", "enum": None},
+        ]
+
+    def test_value_match_for_enum_props(self):
+        # column names are NAME-dissimilar, but VALUES overlap the enum -> value match
+        fieldnames = ["deal_status_name", "app_segment", "collected_amount"]
+        columns_values = {
+            "deal_status_name": {"完了", "謝絶", "キャンセル", "入金待ち"},
+            "app_segment": {"a_初回", "b_リピーター"},
+            "collected_amount": {"76639", "12000"},
+        }
+        vocab_values = {
+            "applicationStatus": {"買取成立", "謝絶", "キャンセル", "未処理"},
+            "customerSegment": {"a_初回", "b_リピーター"},
+        }
+        matches, method = A.match_columns_to_props(self._dprops(), fieldnames, 0.5,
+                                                   columns_values=columns_values, vocab_values=vocab_values)
+        self.assertEqual(matches["applicationStatus"], "deal_status_name")  # value match (shared 2)
+        self.assertEqual(method["applicationStatus"], "value")
+        self.assertEqual(matches["customerSegment"], "app_segment")         # value match (shared 2)
+        self.assertEqual(method["customerSegment"], "value")
+
+    def test_explicit_overrides(self):
+        fieldnames = ["deal_status_name", "offer_price", "collected_amount"]
+        matches, method = A.match_columns_to_props(
+            self._dprops(), fieldnames, 0.5,
+            columns_values={c: set() for c in fieldnames}, vocab_values={},
+            explicit={"requestedAmount": "offer_price"})
+        self.assertEqual(matches["requestedAmount"], "offer_price")
+        self.assertEqual(method["requestedAmount"], "explicit")
+
+    def test_name_match_fallback_for_non_enum(self):
+        # non-enum prop, no explicit -> name similarity (registeredDate vs registered_at)
+        dprops = [{"name": "registeredDate", "domain": "Member", "type": "date", "enum": None}]
+        matches, method = A.match_columns_to_props(dprops, ["registered_at", "x"], 0.6,
+                                                   columns_values={"registered_at": set(), "x": set()},
+                                                   vocab_values={})
+        self.assertEqual(matches["registeredDate"], "registered_at")
+        self.assertEqual(method["registeredDate"], "name")
 
 
 if __name__ == "__main__":
