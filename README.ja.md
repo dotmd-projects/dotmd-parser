@@ -654,15 +654,18 @@ dotmd-parser ontology-abox ./corpus/ \
 
 `--map Class=csv` はそれぞれ CSV ファイルをオントロジーのクラスに割り当てます。
 そのクラスについて `ontology-abox` は `./corpus/ontology/ontology.json` を読み込み、
-CSV の列を正規化した名前の類似度でクラスの datatype property に自動マッチング
-し（`--threshold`、既定 `0.6`）、CSV の各行をインスタンス
-`<prefix>:<Class>_<N>` としてそのクラスの型を付けて生成し、マッチした
-プロパティごとに型付きリテラルを付与します（マッチしない列は推測せずスキップ
+以下の優先度で CSV の列をクラスの datatype property にマッチングします：
+明示的なピニング `--map-col CLASS.PROP=COLUMN` > 列挙型 property の値の重複
+（列の値がプロパティの列挙値を最もカバーするマッチング、`ontology-verify-enums`
+と同様）> 正規化した名前の類似度（`--threshold`、既定 `0.6`）。その後、CSV の
+各行をインスタンス `<prefix>:<Class>_<N>` としてそのクラスの型を付けて生成し、
+マッチしたプロパティごとに型付きリテラルを付与します（マッチしない列は推測せずスキップ
 されます）。
 
 `./corpus/ontology/ontology-abox.ttl`（インスタンスのみ — クラス/プロパティの
 定義は含まない）と `ontology-abox-report.json`（クラスごとのマッチ/未マッチ
-列とインスタンス数）を書き出します。`ontology-abox.ttl` を `ontology.ttl`
+列、インスタンス数、およびプロパティごとの `match_method`: `explicit`、
+`value`、`name`）を書き出します。`ontology-abox.ttl` を `ontology.ttl`
 （TBox）と合わせて読み込めば、`ontology-query` で実データをクエリしたり、
 将来の推論器への入力として使えます。
 
@@ -671,12 +674,16 @@ CSV の列を正規化した名前の類似度でクラスの datatype property 
 ```bash
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map Purchase=b.csv
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --threshold 0.8
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map-col Application.requestedAmount=offer_price
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/ontology/
 ```
 
 - `--map` — CSV ファイルをオントロジーのクラスに割り当てる `Class=csv`
   （複数指定可、必須）。クラスは `ontology.json` に存在する必要があり、
   クラス・CSV とも重複指定はできません。
+- `--map-col` — `CLASS.PROP=COLUMN` でプロパティを CSV 列に明示的にピニングし、
+  自動マッチングを上書きします（複数指定可、オプション）。自動マッチングが誤り
+  または失敗した場合に使用します。
 - `--threshold` — CSV 列を datatype property にマッチさせる際の、正規化した
   名前類似度の最小スコア（既定 `0.6`）。
 - `--out` — 出力先ディレクトリを上書きします（既定: `<path>/ontology/`）。

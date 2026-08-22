@@ -44,6 +44,12 @@ follows [Semantic Versioning](https://semver.org/).
   設計: `docs/superpowers/specs/2026-08-05-ontology-builder-design.md`
 
 ### Changed
+- `ontology-abox` column↔property matching now uses precedence: explicit
+  `--map-col CLASS.PROP=COLUMN` > value-overlap for enum-typed properties
+  (matches by data values like `ontology-verify-enums`) > name similarity.
+  Fixes mis-mapping of same-suffix columns and recovers enum properties whose
+  column names differ from the property name. The report records `match_method`
+  per property.
 - `ontology-query --with-abox`: optionally load `ontology-abox.ttl` (v4c
   instances) into the query graph so instance data and chains can be queried.
   Default is off (queries the TBox `ontology.ttl` only).
