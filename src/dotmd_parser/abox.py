@@ -13,7 +13,12 @@ import json
 import re
 from pathlib import Path
 
+from dotmd_parser.enums import load_vocabularies
 from dotmd_parser.ontology import XSD_MAP
+
+# Minimum shared enum-value count to accept a value-overlap column match;
+# mirrors the value-match convention used in enums.py.
+_MIN_VALUE_OVERLAP = 2
 
 
 def load_class_dprops(directory) -> tuple[dict, set, dict]:
@@ -50,16 +55,67 @@ def parse_maps(map_args, class_names) -> dict[str, str]:
     return maps
 
 
+def parse_map_cols(mapcol_args, dprops_by_class) -> dict:
+    """Parse ["Class.prop=column", ...] -> {Class: {prop: column}}. Validate class+prop."""
+    out: dict = {}
+    for arg in mapcol_args or []:
+        if "=" not in arg or "." not in arg.split("=", 1)[0]:
+            raise ValueError(f"bad --map-col (expected Class.prop=column): {arg!r}")
+        lhs, _, col = arg.partition("=")
+        cls, _, prop = lhs.strip().partition(".")
+        cls, prop, col = cls.strip(), prop.strip(), col.strip()
+        if cls not in dprops_by_class:
+            raise ValueError(f"unknown class in --map-col: {cls!r}")
+        if prop not in {dp["name"] for dp in dprops_by_class[cls]}:
+            raise ValueError(f"{prop!r} is not a datatype property of {cls!r}")
+        out.setdefault(cls, {})[prop] = col
+    return out
+
+
 def _norm_ident(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, str]:
-    matches: dict[str, str] = {}
+def match_columns_to_props(dprops, fieldnames, threshold: float, *,
+                           columns_values=None, vocab_values=None, explicit=None) -> tuple[dict, dict]:
+    """Match each datatype property to a CSV column.
+
+    Precedence: explicit (--map-col) > value-overlap (enum props) > difflib name similarity.
+    Returns (matches, method) where method[prop] in {"explicit","value","name"}.
+    """
+    explicit = explicit or {}
+    vocab_values = vocab_values or {}
+    columns_values = columns_values or {}
+    fieldset = set(fieldnames)
     norm_cols = [(col, _norm_ident(col)) for col in fieldnames]
+
+    matches: dict[str, str] = {}
+    method: dict[str, str] = {}
     # Note: a single column may be selected by more than one property (allowed by design).
     for dp in dprops:
-        pn = _norm_ident(dp["name"])
+        name = dp["name"]
+        # 1) explicit override
+        if name in explicit and explicit[name] in fieldset:
+            matches[name] = explicit[name]
+            method[name] = "explicit"
+            continue
+        # 2) value-overlap for enum-typed props
+        enum_name = dp.get("enum")
+        E = vocab_values.get(enum_name) if enum_name else None
+        if E:
+            best = None  # (shared, column)
+            for col in fieldnames:
+                shared = len(E & columns_values.get(col, set()))
+                if shared == 0:
+                    continue
+                if best is None or shared > best[0] or (shared == best[0] and col < best[1]):
+                    best = (shared, col)
+            if best and best[0] >= _MIN_VALUE_OVERLAP and best[0] / len(E) >= threshold:
+                matches[name] = best[1]
+                method[name] = "value"
+                continue
+        # 3) name similarity (difflib)
+        pn = _norm_ident(name)
         best = None  # (ratio, column)
         for col, nc in norm_cols:
             if not nc:
@@ -68,8 +124,9 @@ def match_columns_to_props(dprops, fieldnames, threshold: float) -> dict[str, st
             if best is None or ratio > best[0] or (ratio == best[0] and col < best[1]):
                 best = (ratio, col)
         if best and best[0] >= threshold:
-            matches[dp["name"]] = best[1]
-    return matches
+            matches[name] = best[1]
+            method[name] = "name"
+    return matches, method
 
 
 def _esc(value: str) -> str:
@@ -118,9 +175,12 @@ def format_abox_summary(findings: dict) -> str:
             f"warnings={len(findings['warnings'])}")
 
 
-def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
+def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dict:
     meta, class_names, dprops_by_class = load_class_dprops(directory)
     prefix = meta["prefix"]
+    vocab_values = {v["name"]: {x.strip() for x in (v.get("values") or []) if x and x.strip()}
+                    for v in load_vocabularies(directory)}
+    map_cols = map_cols or {}
     class_reports = []
     warnings: list[str] = []
     blocks: list[list[str]] = []
@@ -133,14 +193,26 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None) -> dict:
         except (OSError, UnicodeDecodeError, csv.Error) as e:
             raise ValueError(f"could not read {file}: {e}") from e
         dprops = dprops_by_class.get(cls, [])
-        prop_col = match_columns_to_props(dprops, fieldnames, threshold)
+        explicit = (map_cols or {}).get(cls, {})
+        for prop, col in explicit.items():
+            if col not in fieldnames:
+                raise ValueError(
+                    f"--map-col {cls}.{prop}: column {col!r} not found in {file}"
+                )
+        columns_values = {col: {(r.get(col) or "").strip() for r in rows if (r.get(col) or "").strip()}
+                          for col in fieldnames}
+        prop_col, method = match_columns_to_props(
+            dprops, fieldnames, threshold,
+            columns_values=columns_values, vocab_values=vocab_values,
+            explicit=explicit)
         lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
         blocks.append(lines)
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]
         if not prop_col:
             warnings.append(f"class {cls} matched no columns; only rdf:type materialized")
         class_reports.append({"class": cls, "file": str(file), "instances": count,
-                              "matched": prop_col, "unmatched_props": unmatched})
+                              "matched": prop_col, "match_method": method,
+                              "unmatched_props": unmatched})
 
     findings = {
         "meta": {"audited": "ontology/ontology.json", "namespace": meta["namespace"],

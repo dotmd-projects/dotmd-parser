@@ -91,6 +91,7 @@ from dotmd_parser.enums import run_enum_verify as _run_enum_verify
 from dotmd_parser.abox import (
     load_class_dprops as _abox_load,
     parse_maps as _abox_parse_maps,
+    parse_map_cols as _abox_parse_map_cols,
     run_abox as _run_abox,
 )
 
@@ -572,9 +573,10 @@ def cmd_ontology_verify_enums(args: argparse.Namespace) -> int:
 def cmd_ontology_abox(args: argparse.Namespace) -> int:
     """Materialize a datatype-only ABox (instances TTL) from CSV data."""
     try:
-        _, class_names, _ = _abox_load(args.path)
+        _, class_names, dprops_by_class = _abox_load(args.path)
         maps = _abox_parse_maps(args.map, class_names)
-        res = _run_abox(args.path, maps, threshold=args.threshold, out_dir=args.out)
+        map_cols = _abox_parse_map_cols(args.map_col, dprops_by_class)
+        res = _run_abox(args.path, maps, threshold=args.threshold, out_dir=args.out, map_cols=map_cols)
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -928,8 +930,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_abox.add_argument("path", help="Corpus dir containing ontology/ontology.json")
     p_abox.add_argument("--map", action="append", required=True, metavar="CLASS=CSV",
                         help="Map an ontology class to a CSV of its instances (repeatable)")
+    p_abox.add_argument("--map-col", action="append", default=None, dest="map_col",
+                        metavar="CLASS.PROP=COLUMN",
+                        help="Explicit column for a property (repeatable, overrides auto-match)")
     p_abox.add_argument("--threshold", type=float, default=0.6,
-                        help="Column↔property name-match threshold (default 0.6)")
+                        help="Match threshold: name-similarity ratio AND enum value-coverage fraction (default 0.6)")
     p_abox.add_argument("--out", help="Output dir (default: <path>/ontology)")
     p_abox.set_defaults(func=cmd_ontology_abox)
 

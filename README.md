@@ -737,15 +737,19 @@ dotmd-parser ontology-abox ./corpus/ \
 ```
 
 Each `--map Class=csv` assigns a CSV file to an ontology class. For that
-class, `ontology-abox` reads `./corpus/ontology/ontology.json`, auto-matches
-the CSV's columns to the class's datatype properties by normalized name
-similarity (`--threshold`, default `0.6`), and turns every CSV row into an
-instance `<prefix>:<Class>_<N>` typed as the class, with a typed literal for
-each matched property (unmatched columns are skipped, not guessed at).
+class, `ontology-abox` reads `./corpus/ontology/ontology.json`, matches
+the CSV's columns to the class's datatype properties using a precedence:
+explicit `--map-col CLASS.PROP=COLUMN` pinning > value-overlap for enum-typed
+properties (matches by data values, like `ontology-verify-enums`) > normalized
+name similarity (`--threshold`, default `0.6`). Then it turns every CSV row
+into an instance `<prefix>:<Class>_<N>` typed as the class, with a typed
+literal for each matched property (unmatched columns are skipped, not guessed
+at).
 
 It writes `./corpus/ontology/ontology-abox.ttl` (the instances only — no
 class/property definitions) and `ontology-abox-report.json` (matched and
-unmatched columns per class, plus instance counts). Load `ontology-abox.ttl`
+unmatched columns per class, plus instance counts and `match_method` per
+property: `explicit`, `value`, or `name`). Load `ontology-abox.ttl`
 alongside `ontology.ttl` (the TBox) to query real data with `ontology-query`,
 or as input to a future reasoner.
 
@@ -754,14 +758,20 @@ or as input to a future reasoner.
 ```bash
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map Purchase=b.csv
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --threshold 0.8
+dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --map-col Application.requestedAmount=offer_price
 dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/ontology/
 ```
 
 - `--map` — `Class=csv` mapping a CSV file to an ontology class (repeatable,
   required). The class must exist in `ontology.json`; classes and CSVs must
   each appear at most once.
+- `--map-col` — `CLASS.PROP=COLUMN` to explicitly pin a property to a CSV
+  column, overriding auto-match (repeatable, optional). Use when auto-match
+  mis-matches or misses a property.
 - `--threshold` — minimum normalized name-similarity score for a CSV column
-  to be matched to a datatype property (default `0.6`).
+  to be matched to a datatype property (default `0.6`). This same value also
+  governs the minimum enum value-coverage fraction (`shared / |enum|`) for
+  the value-overlap match on enum-typed properties.
 - `--out` — overrides the output directory (default: `<path>/ontology/`).
 
 Prerequisite: run `dotmd-parser ontology ./corpus/` first to produce
