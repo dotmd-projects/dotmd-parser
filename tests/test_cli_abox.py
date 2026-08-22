@@ -86,6 +86,14 @@ class TestCliAboxMapCol(unittest.TestCase):
                      "--map-col", "Application.nope=offer_price"])
         self.assertEqual(cm.exception.code, 2)
 
+    def test_map_col_unknown_column_exit_2(self):
+        # requestedAmount is a real dprop, but the pinned column doesn't exist
+        # in the CSV -> hard error (no silent fallback to auto-match).
+        with self.assertRaises(SystemExit) as cm:
+            cli_run(["ontology-abox", str(self.root), "--map", f"Application={self.csv}",
+                     "--map-col", "Application.requestedAmount=nonexistent_col"])
+        self.assertEqual(cm.exception.code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

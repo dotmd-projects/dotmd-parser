@@ -769,7 +769,9 @@ dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/onto
   column, overriding auto-match (repeatable, optional). Use when auto-match
   mis-matches or misses a property.
 - `--threshold` — minimum normalized name-similarity score for a CSV column
-  to be matched to a datatype property (default `0.6`).
+  to be matched to a datatype property (default `0.6`). This same value also
+  governs the minimum enum value-coverage fraction (`shared / |enum|`) for
+  the value-overlap match on enum-typed properties.
 - `--out` — overrides the output directory (default: `<path>/ontology/`).
 
 Prerequisite: run `dotmd-parser ontology ./corpus/` first to produce

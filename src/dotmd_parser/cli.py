@@ -934,7 +934,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         metavar="CLASS.PROP=COLUMN",
                         help="Explicit column for a property (repeatable, overrides auto-match)")
     p_abox.add_argument("--threshold", type=float, default=0.6,
-                        help="Column↔property name-match threshold (default 0.6)")
+                        help="Match threshold: name-similarity ratio AND enum value-coverage fraction (default 0.6)")
     p_abox.add_argument("--out", help="Output dir (default: <path>/ontology)")
     p_abox.set_defaults(func=cmd_ontology_abox)
 

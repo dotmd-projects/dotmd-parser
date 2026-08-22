@@ -16,6 +16,10 @@ from pathlib import Path
 from dotmd_parser.enums import load_vocabularies
 from dotmd_parser.ontology import XSD_MAP
 
+# Minimum shared enum-value count to accept a value-overlap column match;
+# mirrors the value-match convention used in enums.py.
+_MIN_VALUE_OVERLAP = 2
+
 
 def load_class_dprops(directory) -> tuple[dict, set, dict]:
     path = Path(directory).resolve() / "ontology" / "ontology.json"
@@ -106,7 +110,7 @@ def match_columns_to_props(dprops, fieldnames, threshold: float, *,
                     continue
                 if best is None or shared > best[0] or (shared == best[0] and col < best[1]):
                     best = (shared, col)
-            if best and best[0] >= 2 and best[0] / len(E) >= threshold:
+            if best and best[0] >= _MIN_VALUE_OVERLAP and best[0] / len(E) >= threshold:
                 matches[name] = best[1]
                 method[name] = "value"
                 continue
@@ -189,12 +193,18 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dic
         except (OSError, UnicodeDecodeError, csv.Error) as e:
             raise ValueError(f"could not read {file}: {e}") from e
         dprops = dprops_by_class.get(cls, [])
+        explicit = (map_cols or {}).get(cls, {})
+        for prop, col in explicit.items():
+            if col not in fieldnames:
+                raise ValueError(
+                    f"--map-col {cls}.{prop}: column {col!r} not found in {file}"
+                )
         columns_values = {col: {(r.get(col) or "").strip() for r in rows if (r.get(col) or "").strip()}
                           for col in fieldnames}
         prop_col, method = match_columns_to_props(
             dprops, fieldnames, threshold,
             columns_values=columns_values, vocab_values=vocab_values,
-            explicit=map_cols.get(cls))
+            explicit=explicit)
         lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
         blocks.append(lines)
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]

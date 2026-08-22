@@ -49,7 +49,8 @@ follows [Semantic Versioning](https://semver.org/).
   (matches by data values like `ontology-verify-enums`) > name similarity.
   Fixes mis-mapping of same-suffix columns and recovers enum properties whose
   column names differ from the property name. The report records `match_method`
-  per property.
+  per property. `match_columns_to_props` now returns `(matches, method)` (was a
+  dict) — a public-API signature change.
 - `ontology-query --with-abox`: optionally load `ontology-abox.ttl` (v4c
   instances) into the query graph so instance data and chains can be queried.
   Default is off (queries the TBox `ontology.ttl` only).

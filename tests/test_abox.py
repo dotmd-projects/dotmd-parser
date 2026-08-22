@@ -241,6 +241,14 @@ class TestRunAboxValueMatch(unittest.TestCase):
         self.assertEqual(c["matched"]["requestedAmount"], "offer_price")
         self.assertEqual(c["match_method"]["requestedAmount"], "explicit")
 
+    def test_map_col_unknown_column_raises(self):
+        # --map-col column doesn't exist in the CSV's fieldnames -> hard error,
+        # not a silent fallback to auto-match (parse_map_cols can't validate
+        # the column since it doesn't see fieldnames).
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root, {"Application": str(self.csv)},
+                      map_cols={"Application": {"requestedAmount": "nonexistent_col"}})
+
     def test_parse_map_cols_errors(self):
         dpc = {"Application": [{"name": "requestedAmount"}]}
         with self.assertRaises(ValueError):

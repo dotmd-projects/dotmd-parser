@@ -685,7 +685,8 @@ dotmd-parser ontology-abox ./corpus/ --map Application=a.csv --out ./corpus/onto
   自動マッチングを上書きします（複数指定可、オプション）。自動マッチングが誤り
   または失敗した場合に使用します。
 - `--threshold` — CSV 列を datatype property にマッチさせる際の、正規化した
-  名前類似度の最小スコア（既定 `0.6`）。
+  名前類似度の最小スコア（既定 `0.6`）。同じ値が、列挙型プロパティの値の重複
+  マッチングにおける最小カバー率（`shared / |enum|`）も兼ねて制御します。
 - `--out` — 出力先ディレクトリを上書きします（既定: `<path>/ontology/`）。
 
 前提条件: 先に `dotmd-parser ontology ./corpus/` を実行して `ontology.json`
