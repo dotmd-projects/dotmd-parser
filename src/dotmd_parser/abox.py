@@ -13,6 +13,7 @@ import json
 import re
 from pathlib import Path
 
+from dotmd_parser.abox_links import subject_uri
 from dotmd_parser.enums import load_vocabularies
 from dotmd_parser.ontology import XSD_MAP
 
@@ -38,6 +39,13 @@ def load_class_dprops(directory) -> tuple[dict, set, dict]:
     for dp in ir.get("datatype_properties", []):
         dprops_by_class.setdefault(dp.get("domain"), []).append(dp)
     return {"namespace": meta["namespace"], "prefix": meta["prefix"]}, class_names, dprops_by_class
+
+
+def load_object_props(directory) -> list[dict]:
+    """Return the IR's object_properties list (empty if absent)."""
+    path = Path(directory).resolve() / "ontology" / "ontology.json"
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    return ir.get("object_properties", []) if isinstance(ir, dict) else []
 
 
 def parse_maps(map_args, class_names) -> dict[str, str]:
@@ -137,12 +145,23 @@ def _lit(value: str, xsd_type: str) -> str:
     return f'"{_esc(value)}"^^{XSD_MAP.get(xsd_type, "xsd:string")}'
 
 
-def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[list[str], int]:
+def materialize_class(class_name, dprops, prop_col_map, rows, prefix,
+                      id_col=None) -> tuple[list[str], int, dict]:
     lines: list[str] = []
     count = 0
+    keys: set[str] = set()
+    duplicate_ids = 0
+    missing_id_rows = 0
     for i, row in enumerate(rows, start=1):
         count += 1
-        subj = f"{prefix}:{class_name}_{i}"
+        subj, key = subject_uri(prefix, class_name, row, i, id_col)
+        if id_col is not None:
+            if key is None:
+                missing_id_rows += 1
+            else:
+                if key in keys:
+                    duplicate_ids += 1
+                keys.add(key)
         lines.append(f"{subj} a {prefix}:{class_name} ;")
         for dp in dprops:
             col = prop_col_map.get(dp["name"])
@@ -153,7 +172,9 @@ def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[l
                 lines.append(f"    {prefix}:{dp['name']} {_lit(val, dp.get('type'))} ;")
         lines[-1] = lines[-1].rstrip(" ;") + " ."   # terminate the subject block
         lines.append("")
-    return lines, count
+    keyinfo = {"keys": keys, "duplicate_ids": duplicate_ids,
+               "missing_id_rows": missing_id_rows}
+    return lines, count, keyinfo
 
 
 _ABOX_TTL = "ontology-abox.ttl"
@@ -205,7 +226,7 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dic
             dprops, fieldnames, threshold,
             columns_values=columns_values, vocab_values=vocab_values,
             explicit=explicit)
-        lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
+        lines, count, _keyinfo = materialize_class(cls, dprops, prop_col, rows, prefix)
         blocks.append(lines)
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]
         if not prop_col:

@@ -86,7 +86,7 @@ class TestMatchMaterialize(unittest.TestCase):
         rows = [{"fee_rate": "0.05", "applicationStatus": "買取成立", "note": "x"},
                 {"fee_rate": "", "applicationStatus": "謝絶", "note": ""}]
         prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
-        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        lines, count, _ = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
         text = "\n".join(lines)
         self.assertEqual(count, 2)
         self.assertIn("ex:Application_1 a ex:Application ;", text)
@@ -100,11 +100,55 @@ class TestMatchMaterialize(unittest.TestCase):
         # row where the only matched column is empty -> block is just the type line, terminated with .
         rows = [{"fee_rate": "", "applicationStatus": "", "note": "x"}]
         prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
-        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        lines, count, _ = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
         text = "\n".join(lines)
         self.assertEqual(count, 1)
         self.assertIn("ex:Application_1 a ex:Application .", text)   # terminated on type line
         self.assertNotIn("ex:feeRate", text)                          # no property lines
+
+
+class TestMaterializeKeyed(unittest.TestCase):
+    def _dprops(self):
+        return [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
+
+    def test_unkeyed_returns_rowindex_and_empty_keyinfo(self):
+        rows = [{"feeRate": "0.03"}, {"feeRate": "0.05"}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", self._dprops(), {"feeRate": "feeRate"}, rows, "ex")
+        self.assertEqual(count, 2)
+        self.assertIn("ex:Application_1 a ex:Application ;", lines)
+        self.assertEqual(keyinfo, {"keys": set(), "duplicate_ids": 0,
+                                   "missing_id_rows": 0})
+
+    def test_keyed_uses_id_column(self):
+        rows = [{"deal_id": "D1", "feeRate": "0.03"},
+                {"deal_id": "D2", "feeRate": "0.05"}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", self._dprops(), {"feeRate": "feeRate"}, rows, "ex",
+            id_col="deal_id")
+        self.assertIn("ex:Application_D1 a ex:Application ;", lines)
+        self.assertEqual(keyinfo["keys"], {"D1", "D2"})
+
+    def test_keyed_duplicate_and_missing_counted(self):
+        rows = [{"deal_id": "D1"}, {"deal_id": "D1"}, {"deal_id": ""}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", [], {}, rows, "ex", id_col="deal_id")
+        self.assertEqual(keyinfo["keys"], {"D1"})
+        self.assertEqual(keyinfo["duplicate_ids"], 1)
+        self.assertEqual(keyinfo["missing_id_rows"], 1)
+        self.assertIn("ex:Application__row3 a ex:Application .", lines)
+
+    def test_load_object_props(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); (root / "ontology").mkdir()
+            ir = {"meta": {"namespace": "https://ex.org/o#", "prefix": "ex"},
+                  "classes": [], "datatype_properties": [],
+                  "object_properties": [
+                      {"name": "submittedBy", "from": "Application", "to": "Member"}]}
+            (root / "ontology" / "ontology.json").write_text(
+                json.dumps(ir), encoding="utf-8")
+            ops = A.load_object_props(root)
+            self.assertEqual(ops[0]["name"], "submittedBy")
 
 
 class TestRunAbox(unittest.TestCase):
@@ -158,7 +202,7 @@ class TestAboxDeterminism(unittest.TestCase):
         dprops = [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
         rows = [{"fee_rate": "0.05"}, {"fee_rate": "0.10"}]
         pc, _method = A.match_columns_to_props(dprops, ["fee_rate"], 0.6)
-        lines, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
+        lines, _, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
         self.assertEqual(A.emit_abox_ttl(meta, [lines]), A.emit_abox_ttl(meta, [lines]))
 
 
