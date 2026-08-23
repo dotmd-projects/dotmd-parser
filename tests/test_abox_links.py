@@ -48,5 +48,84 @@ class TestSubjectUri(unittest.TestCase):
         self.assertIsNone(key)
 
 
+_OPROPS = [
+    {"name": "submittedBy", "from": "Application", "to": "Member"},
+    {"name": "hasOccupation", "from": "Member", "to": "Occupation"},
+]
+
+
+class TestParseIdCols(unittest.TestCase):
+    def test_ok(self):
+        self.assertEqual(
+            L.parse_id_cols(["Member=user_id", "Application=deal_id"],
+                            {"Member", "Application"}),
+            {"Member": "user_id", "Application": "deal_id"})
+
+    def test_none_returns_empty(self):
+        self.assertEqual(L.parse_id_cols(None, {"Member"}), {})
+
+    def test_bad_format_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_id_cols(["Member"], {"Member"})
+
+    def test_empty_column_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_id_cols(["Member="], {"Member"})
+
+    def test_unmapped_class_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_id_cols(["Ghost=x"], {"Member"})
+
+    def test_duplicate_class_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_id_cols(["Member=a", "Member=b"], {"Member"})
+
+
+class TestParseLinks(unittest.TestCase):
+    def _id_cols(self):
+        return {"Member": "user_id"}
+
+    def test_ok(self):
+        out = L.parse_links(["Application.submittedBy=user_id"], _OPROPS,
+                            self._id_cols(), {"Application", "Member"})
+        self.assertEqual(out, {("Application", "submittedBy"): "user_id"})
+
+    def test_none_returns_empty(self):
+        self.assertEqual(L.parse_links(None, _OPROPS, self._id_cols(),
+                                       {"Application", "Member"}), {})
+
+    def test_bad_format_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_links(["submittedBy=user_id"], _OPROPS, self._id_cols(),
+                          {"Application", "Member"})
+
+    def test_unknown_property_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_links(["Application.ghost=user_id"], _OPROPS,
+                          self._id_cols(), {"Application", "Member"})
+
+    def test_from_mismatch_raises(self):
+        # submittedBy is from Application, not Member
+        with self.assertRaises(ValueError):
+            L.parse_links(["Member.submittedBy=user_id"], _OPROPS,
+                          self._id_cols(), {"Application", "Member"})
+
+    def test_target_not_mapped_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_links(["Application.submittedBy=user_id"], _OPROPS,
+                          self._id_cols(), {"Application"})
+
+    def test_target_no_idcol_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_links(["Application.submittedBy=user_id"], _OPROPS,
+                          {}, {"Application", "Member"})
+
+    def test_duplicate_link_raises(self):
+        with self.assertRaises(ValueError):
+            L.parse_links(["Application.submittedBy=user_id",
+                           "Application.submittedBy=uid2"], _OPROPS,
+                          self._id_cols(), {"Application", "Member"})
+
+
 if __name__ == "__main__":
     unittest.main()
