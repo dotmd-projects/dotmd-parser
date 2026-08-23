@@ -117,3 +117,64 @@ def resolve_fk_column(src_columns_values, tgt_keys, threshold):
     if best:
         return best[1], "value"
     return None, None
+
+
+def materialize_links(oprops, class_ctx, explicit_links, threshold, prefix):
+    """Emit object-property link triples between materialized, keyed classes.
+
+    Returns (link_lines, reports). See module/spec docs for method semantics.
+    """
+    link_lines: list[str] = []
+    reports: list[dict] = []
+    for op in sorted(oprops, key=lambda o: o["name"]):
+        src, tgt, prop = op.get("from"), op.get("to"), op["name"]
+        if src not in class_ctx:
+            continue  # 'from' side not materialized: not relevant
+        rep = {"property": prop, "from": src, "to": tgt, "fk_column": None,
+               "method": None, "emitted": 0, "dangling": 0,
+               "dangling_examples": []}
+        if tgt not in class_ctx:
+            rep["method"] = "skipped-not-mapped"
+            reports.append(rep)
+            continue
+        if not class_ctx[tgt].get("keyed"):
+            rep["method"] = "skipped-no-id"
+            reports.append(rep)
+            continue
+        tgt_keys = class_ctx[tgt]["keys"]
+        col = explicit_links.get((src, prop))
+        method = "explicit"
+        if not col:
+            col, method = resolve_fk_column(
+                class_ctx[src]["columns_values"], tgt_keys, threshold)
+        if not col:
+            rep["method"] = "skipped-no-fk"
+            reports.append(rep)
+            continue
+        rep["fk_column"] = col
+        rep["method"] = method
+        src_id_col = class_ctx[src].get("id_col")
+        emitted = 0
+        dangling = 0
+        examples: list[str] = []
+        for i, row in enumerate(class_ctx[src]["rows"], start=1):
+            fk = (row.get(col) or "").strip()
+            if not fk:
+                continue
+            if fk in tgt_keys:
+                subj, _ = subject_uri(prefix, src, row, i, src_id_col)
+                obj = f"{prefix}:{tgt}_{slug_key(fk)}"
+                link_lines.append(f"{subj} {prefix}:{prop} {obj} .")
+                emitted += 1
+            else:
+                dangling += 1
+                if len(examples) < 5:
+                    examples.append(fk)
+        rep["emitted"] = emitted
+        rep["dangling"] = dangling
+        rep["dangling_examples"] = examples
+        reports.append(rep)
+    link_lines = sorted(link_lines)
+    if link_lines:
+        link_lines = ["# object-property links"] + link_lines + [""]
+    return link_lines, reports

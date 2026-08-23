@@ -153,5 +153,84 @@ class TestResolveFkColumn(unittest.TestCase):
         self.assertEqual(col, "a")
 
 
+class TestMaterializeLinks(unittest.TestCase):
+    def _ctx(self):
+        return {
+            "Application": {
+                "keyed": True, "id_col": "deal_id",
+                "keys": {"D1", "D2", "D3"},
+                "rows": [{"deal_id": "D1", "user_id": "7834"},
+                         {"deal_id": "D2", "user_id": "9001"},
+                         {"deal_id": "D3", "user_id": "9999"}],  # 9999 dangling
+                "columns_values": {"deal_id": {"D1", "D2", "D3"},
+                                   "user_id": {"7834", "9001", "9999"}},
+            },
+            "Member": {
+                "keyed": True, "id_col": "user_id",
+                "keys": {"7834", "9001"},
+                "rows": [{"user_id": "7834"}, {"user_id": "9001"}],
+                "columns_values": {"user_id": {"7834", "9001"}},
+            },
+        }
+
+    def test_explicit_link_emits_and_skips_dangling(self):
+        oprops = [{"name": "submittedBy", "from": "Application", "to": "Member"}]
+        lines, reports = L.materialize_links(
+            oprops, self._ctx(),
+            {("Application", "submittedBy"): "user_id"}, 0.6, "ex")
+        self.assertIn("ex:Application_D1 ex:submittedBy ex:Member_7834 .", lines)
+        self.assertIn("ex:Application_D2 ex:submittedBy ex:Member_9001 .", lines)
+        # D3 -> user_id 9999 not in Member keys -> skipped
+        self.assertNotIn("ex:Member_9999", "".join(lines))
+        r = reports[0]
+        self.assertEqual(r["method"], "explicit")
+        self.assertEqual(r["fk_column"], "user_id")
+        self.assertEqual(r["emitted"], 2)
+        self.assertEqual(r["dangling"], 1)
+        self.assertEqual(r["dangling_examples"], ["9999"])
+
+    def test_autodetect_when_no_explicit(self):
+        oprops = [{"name": "submittedBy", "from": "Application", "to": "Member"}]
+        lines, reports = L.materialize_links(oprops, self._ctx(), {}, 0.6, "ex")
+        self.assertEqual(reports[0]["method"], "value")
+        self.assertEqual(reports[0]["fk_column"], "user_id")
+        self.assertEqual(reports[0]["emitted"], 2)
+
+    def test_target_not_mapped(self):
+        oprops = [{"name": "runsOn", "from": "Application", "to": "AdPlatform"}]
+        lines, reports = L.materialize_links(oprops, self._ctx(), {}, 0.6, "ex")
+        self.assertEqual(lines, [])
+        self.assertEqual(reports[0]["method"], "skipped-not-mapped")
+
+    def test_target_unkeyed(self):
+        ctx = self._ctx()
+        ctx["Member"]["keyed"] = False
+        oprops = [{"name": "submittedBy", "from": "Application", "to": "Member"}]
+        _, reports = L.materialize_links(oprops, ctx, {}, 0.6, "ex")
+        self.assertEqual(reports[0]["method"], "skipped-no-id")
+
+    def test_no_fk_column_found(self):
+        ctx = self._ctx()
+        # wipe the overlapping column so nothing auto-detects
+        ctx["Application"]["columns_values"] = {"deal_id": {"D1", "D2", "D3"}}
+        oprops = [{"name": "submittedBy", "from": "Application", "to": "Member"}]
+        _, reports = L.materialize_links(oprops, ctx, {}, 0.6, "ex")
+        self.assertEqual(reports[0]["method"], "skipped-no-fk")
+
+    def test_from_not_materialized_is_ignored(self):
+        oprops = [{"name": "x", "from": "Ghost", "to": "Member"}]
+        lines, reports = L.materialize_links(oprops, self._ctx(), {}, 0.6, "ex")
+        self.assertEqual(reports, [])
+
+    def test_lines_sorted_and_headered(self):
+        oprops = [{"name": "submittedBy", "from": "Application", "to": "Member"}]
+        lines, _ = L.materialize_links(
+            oprops, self._ctx(), {("Application", "submittedBy"): "user_id"},
+            0.6, "ex")
+        self.assertEqual(lines[0], "# object-property links")
+        body = [ln for ln in lines if ln and not ln.startswith("#")]
+        self.assertEqual(body, sorted(body))
+
+
 if __name__ == "__main__":
     unittest.main()
