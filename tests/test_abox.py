@@ -10,11 +10,16 @@ from dotmd_parser import abox as A
 def _write_ontology(root: Path):
     onto = root / "ontology"; onto.mkdir()
     ir = {"meta": {"namespace": "https://ex.org/o#", "prefix": "ex"},
-          "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+          "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"},
+                      {"name": "Member", "label_ja": "会員", "domain_group": "顧客"}],
           "datatype_properties": [
               {"name": "feeRate", "domain": "Application", "type": "decimal", "label_ja": "手数料率"},
               {"name": "applicationStatus", "domain": "Application", "type": "string", "label_ja": "状態"},
-              {"name": "requestedAmount", "domain": "Application", "type": "decimal", "label_ja": "申請額"}]}
+              {"name": "requestedAmount", "domain": "Application", "type": "decimal", "label_ja": "申請額"},
+              {"name": "entityType", "domain": "Member", "type": "string", "label_ja": "個人法人"}],
+          "object_properties": [
+              {"name": "submittedBy", "from": "Application", "to": "Member",
+               "cardinality": "多:1", "characteristics": ["Functional"]}]}
     (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
 
 
@@ -301,6 +306,65 @@ class TestRunAboxValueMatch(unittest.TestCase):
             A.parse_map_cols(["Bogus.x=col"], dpc)                        # unknown class
         with self.assertRaises(ValueError):
             A.parse_map_cols(["Application.nope=col"], dpc)               # prop not a dprop
+
+
+class TestRunAboxLinks(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _write_ontology(self.root)
+        self.app = self.root / "app.csv"
+        self.mem = self.root / "mem.csv"
+        _write_csv(self.app, [
+            {"deal_id": "D1", "user_id": "7834", "feeRate": "0.03"},
+            {"deal_id": "D2", "user_id": "9001", "feeRate": "0.05"},
+            {"deal_id": "D3", "user_id": "9999", "feeRate": "0.02"}])  # 9999 dangling
+        _write_csv(self.mem, [
+            {"user_id": "7834", "entityType": "a_個人"},
+            {"user_id": "9001", "entityType": "b_法人"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_links_emitted_and_reported(self):
+        res = A.run_abox(
+            self.root,
+            {"Application": str(self.app), "Member": str(self.mem)},
+            id_cols={"Application": "deal_id", "Member": "user_id"},
+            links={})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        self.assertIn("ex:Application_D1 ex:submittedBy ex:Member_7834 .", ttl)
+        self.assertNotIn("ex:Member_9999", ttl)
+        ol = res["findings"]["object_links"]
+        self.assertEqual(len(ol), 1)
+        self.assertEqual(ol[0]["property"], "submittedBy")
+        self.assertEqual(ol[0]["emitted"], 2)
+        self.assertEqual(ol[0]["dangling"], 1)
+        # per-class key report
+        apprep = next(c for c in res["findings"]["classes"] if c["class"] == "Application")
+        self.assertEqual(apprep["id_col"], "deal_id")
+        self.assertEqual(apprep["duplicate_ids"], 0)
+
+    def test_backward_compat_no_idcols(self):
+        res = A.run_abox(self.root,
+                         {"Application": str(self.app), "Member": str(self.mem)})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        self.assertIn("ex:Application_1 a ex:Application ;", ttl)
+        self.assertNotIn("ex:submittedBy", ttl)
+        self.assertEqual(res["findings"]["object_links"], [])
+
+    def test_idcol_missing_column_raises(self):
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root,
+                       {"Application": str(self.app), "Member": str(self.mem)},
+                       id_cols={"Application": "nope"})
+
+    def test_explicit_link_missing_column_raises(self):
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root,
+                       {"Application": str(self.app), "Member": str(self.mem)},
+                       id_cols={"Member": "user_id"},
+                       links={("Application", "submittedBy"): "nope"})
 
 
 if __name__ == "__main__":
