@@ -366,6 +366,36 @@ class TestRunAboxLinks(unittest.TestCase):
                        id_cols={"Member": "user_id"},
                        links={("Application", "submittedBy"): "nope"})
 
+    def test_no_idcol_ttl_is_byte_stable_golden(self):
+        """Golden/characterization test: with no --id-col/--link, the emitted
+        TTL format must stay byte-identical to the pre-links (v4c) output.
+        If this test fails, the no-flags TTL format has drifted -- update the
+        golden string deliberately, don't just paste the new output blindly.
+        """
+        csv_path = self.root / "app_golden.csv"
+        _write_csv(csv_path, [
+            {"feeRate": "0.05", "applicationStatus": "OK"},
+            {"feeRate": "0.10", "applicationStatus": "NG"}])
+        res = A.run_abox(self.root, {"Application": str(csv_path)})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        expected = (
+            '@prefix ex: <https://ex.org/o#> .\n'
+            '@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n'
+            '\n'
+            'ex:Application_1 a ex:Application ;\n'
+            '    ex:feeRate "0.05"^^xsd:decimal ;\n'
+            '    ex:applicationStatus "OK"^^xsd:string .\n'
+            '\n'
+            'ex:Application_2 a ex:Application ;\n'
+            '    ex:feeRate "0.10"^^xsd:decimal ;\n'
+            '    ex:applicationStatus "NG"^^xsd:string .\n'
+        )
+        self.assertEqual(ttl, expected)
+        self.assertNotIn("__row", ttl)
+        self.assertNotIn("# object-property links", ttl)
+        self.assertNotIn(" ex:submittedBy ", ttl)
+        self.assertEqual(res["findings"]["object_links"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

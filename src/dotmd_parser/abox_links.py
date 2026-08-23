@@ -22,6 +22,11 @@ def slug_key(value: str) -> str:
     Replaces every run of chars outside [A-Za-z0-9_-] with a single '-',
     strips leading/trailing '-'; empty result becomes 'x'. The caller always
     prefixes 'Class_', which guarantees a leading letter for the full name.
+
+    Assumption: distinct raw keys are expected to slug to distinct suffixes;
+    two distinct raw keys that slug identically (e.g. "a b" and "a/b" both
+    -> "a-b") will collapse to the same URI, and this collision is not
+    detected or reported.
     """
     s = _UNSAFE.sub("-", str(value)).strip("-")
     return s or "x"
@@ -43,7 +48,7 @@ def subject_uri(prefix: str, class_name: str, row: dict, rowindex: int,
     return f"{prefix}:{class_name}_{slug_key(raw)}", raw
 
 
-def parse_id_cols(args, mapped_classes) -> dict:
+def parse_id_cols(args, mapped_classes) -> dict[str, str]:
     """Parse ["Class=column", ...] -> {Class: column}. Validate format+membership."""
     out: dict = {}
     for arg in args or []:
@@ -61,7 +66,7 @@ def parse_id_cols(args, mapped_classes) -> dict:
     return out
 
 
-def parse_links(args, oprops, id_cols, mapped_classes) -> dict:
+def parse_links(args, oprops, id_cols, mapped_classes) -> dict[tuple[str, str], str]:
     """Parse ["Src.prop=column", ...] -> {(Src, prop): column}.
 
     Validates the property exists (from == Src), both ends are mapped, and the
@@ -96,7 +101,7 @@ def parse_links(args, oprops, id_cols, mapped_classes) -> dict:
     return out
 
 
-def resolve_fk_column(src_columns_values, tgt_keys, threshold):
+def resolve_fk_column(src_columns_values, tgt_keys, threshold) -> tuple[str | None, str | None]:
     """Auto-detect the FK column by value overlap with the target key set.
 
     Returns (column, "value") for the best-overlapping accepted column, else
@@ -119,7 +124,7 @@ def resolve_fk_column(src_columns_values, tgt_keys, threshold):
     return None, None
 
 
-def materialize_links(oprops, class_ctx, explicit_links, threshold, prefix):
+def materialize_links(oprops, class_ctx, explicit_links, threshold, prefix) -> tuple[list[str], list[dict]]:
     """Emit object-property link triples between materialized, keyed classes.
 
     Returns (link_lines, reports). See module/spec docs for method semantics.
@@ -174,7 +179,7 @@ def materialize_links(oprops, class_ctx, explicit_links, threshold, prefix):
         rep["dangling"] = dangling
         rep["dangling_examples"] = examples
         reports.append(rep)
-    link_lines = sorted(link_lines)
+    link_lines = sorted(set(link_lines))
     if link_lines:
         link_lines = ["# object-property links"] + link_lines + [""]
     return link_lines, reports
