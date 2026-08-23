@@ -94,3 +94,26 @@ def parse_links(args, oprops, id_cols, mapped_classes) -> dict:
             raise ValueError(f"duplicate --link for {src}.{prop}")
         out[(src, prop)] = col
     return out
+
+
+def resolve_fk_column(src_columns_values, tgt_keys, threshold):
+    """Auto-detect the FK column by value overlap with the target key set.
+
+    Returns (column, "value") for the best-overlapping accepted column, else
+    (None, None). Accept when shared >= _MIN_VALUE_OVERLAP and
+    shared / |col values| >= threshold. Ties break by column (fieldname) order.
+    """
+    best = None  # (shared, column)
+    for col, vals in src_columns_values.items():
+        if not vals:
+            continue
+        shared = len(vals & tgt_keys)
+        if shared < _MIN_VALUE_OVERLAP:
+            continue
+        if shared / len(vals) < threshold:
+            continue
+        if best is None or shared > best[0]:   # strict > keeps first-in-order
+            best = (shared, col)
+    if best:
+        return best[1], "value"
+    return None, None

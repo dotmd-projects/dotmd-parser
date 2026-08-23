@@ -127,5 +127,31 @@ class TestParseLinks(unittest.TestCase):
                           self._id_cols(), {"Application", "Member"})
 
 
+class TestResolveFkColumn(unittest.TestCase):
+    def test_picks_overlapping_column(self):
+        cols = {"user_id": {"7834", "9001", "5"}, "amount": {"100", "200"}}
+        col, method = L.resolve_fk_column(cols, {"7834", "9001", "5", "42"}, 0.6)
+        self.assertEqual(col, "user_id")
+        self.assertEqual(method, "value")
+
+    def test_below_threshold_rejected(self):
+        # only 1 of 3 src values overlaps -> coverage 0.33 < 0.6, and shared 1 < 2
+        cols = {"user_id": {"7834", "x", "y"}}
+        col, method = L.resolve_fk_column(cols, {"7834"}, 0.6)
+        self.assertIsNone(col)
+        self.assertIsNone(method)
+
+    def test_shared_below_min_rejected(self):
+        # coverage passes (1/1) but shared count 1 < _MIN_VALUE_OVERLAP
+        cols = {"user_id": {"7834"}}
+        col, method = L.resolve_fk_column(cols, {"7834", "z"}, 0.5)
+        self.assertIsNone(col)
+
+    def test_tie_breaks_by_column_order(self):
+        cols = {"a": {"1", "2"}, "b": {"1", "2"}}
+        col, _ = L.resolve_fk_column(cols, {"1", "2"}, 0.6)
+        self.assertEqual(col, "a")
+
+
 if __name__ == "__main__":
     unittest.main()
