@@ -1,9 +1,11 @@
-"""dotmd-parser — ABox generation: materialize class instances from CSV data (v4c).
+"""dotmd-parser — ABox generation: materialize class instances + object links from CSV data (v4c).
 
 Maps each CSV (via explicit --map Class=file) to an ontology class, auto-matches
-CSV columns to the class's datatype properties by name similarity, and emits an
-instances TTL (datatype-property literals only). stdlib generation, deterministic;
-reads the ontology, writes only ontology-abox.* — never mutates the ontology.
+CSV columns to the class's datatype properties, and emits an instances TTL. With
+--id-col, instances are keyed by a natural id column; object-property links are
+then materialized between keyed classes via foreign keys (see abox_links.py).
+stdlib generation, deterministic; reads the ontology, writes only
+ontology-abox.* — never mutates the ontology.
 """
 from __future__ import annotations
 

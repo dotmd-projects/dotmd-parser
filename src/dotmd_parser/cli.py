@@ -576,7 +576,7 @@ def cmd_ontology_verify_enums(args: argparse.Namespace) -> int:
 
 
 def cmd_ontology_abox(args: argparse.Namespace) -> int:
-    """Materialize a datatype-only ABox (instances TTL) from CSV data."""
+    """Materialize an ABox (instances + object-property links) from CSV data."""
     try:
         _, class_names, dprops_by_class = _abox_load(args.path)
         maps = _abox_parse_maps(args.map, class_names)
@@ -935,7 +935,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enums.set_defaults(func=cmd_ontology_verify_enums)
 
     p_abox = sub.add_parser("ontology-abox",
-                            help="Materialize a datatype-only ABox (instances TTL) from CSV")
+                            help="Materialize an ABox (instances + object-property links) from CSV")
     p_abox.add_argument("path", help="Corpus dir containing ontology/ontology.json")
     p_abox.add_argument("--map", action="append", required=True, metavar="CLASS=CSV",
                         help="Map an ontology class to a CSV of its instances (repeatable)")
