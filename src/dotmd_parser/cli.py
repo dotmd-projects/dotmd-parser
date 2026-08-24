@@ -90,9 +90,14 @@ from dotmd_parser.query import run_query as _run_query
 from dotmd_parser.enums import run_enum_verify as _run_enum_verify
 from dotmd_parser.abox import (
     load_class_dprops as _abox_load,
+    load_object_props as _abox_load_oprops,
     parse_maps as _abox_parse_maps,
     parse_map_cols as _abox_parse_map_cols,
     run_abox as _run_abox,
+)
+from dotmd_parser.abox_links import (
+    parse_id_cols as _abox_parse_id_cols,
+    parse_links as _abox_parse_links,
 )
 
 
@@ -571,12 +576,16 @@ def cmd_ontology_verify_enums(args: argparse.Namespace) -> int:
 
 
 def cmd_ontology_abox(args: argparse.Namespace) -> int:
-    """Materialize a datatype-only ABox (instances TTL) from CSV data."""
+    """Materialize an ABox (instances + object-property links) from CSV data."""
     try:
         _, class_names, dprops_by_class = _abox_load(args.path)
         maps = _abox_parse_maps(args.map, class_names)
         map_cols = _abox_parse_map_cols(args.map_col, dprops_by_class)
-        res = _run_abox(args.path, maps, threshold=args.threshold, out_dir=args.out, map_cols=map_cols)
+        id_cols = _abox_parse_id_cols(args.id_col, set(maps))
+        oprops = _abox_load_oprops(args.path)
+        links = _abox_parse_links(args.link, oprops, id_cols, set(maps))
+        res = _run_abox(args.path, maps, threshold=args.threshold, out_dir=args.out,
+                        map_cols=map_cols, id_cols=id_cols, links=links)
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
@@ -926,13 +935,22 @@ def _build_parser() -> argparse.ArgumentParser:
     p_enums.set_defaults(func=cmd_ontology_verify_enums)
 
     p_abox = sub.add_parser("ontology-abox",
-                            help="Materialize a datatype-only ABox (instances TTL) from CSV")
+                            help="Materialize an ABox (instances + object-property links) from CSV")
     p_abox.add_argument("path", help="Corpus dir containing ontology/ontology.json")
     p_abox.add_argument("--map", action="append", required=True, metavar="CLASS=CSV",
                         help="Map an ontology class to a CSV of its instances (repeatable)")
     p_abox.add_argument("--map-col", action="append", default=None, dest="map_col",
                         metavar="CLASS.PROP=COLUMN",
                         help="Explicit column for a property (repeatable, overrides auto-match)")
+    p_abox.add_argument("--id-col", action="append", default=None, dest="id_col",
+                        metavar="CLASS=COLUMN",
+                        help="Key a class's instance URIs by a natural id column "
+                             "(repeatable), e.g. Member=user_id")
+    p_abox.add_argument("--link", action="append", default=None, dest="link",
+                        metavar="SRC.PROP=COLUMN",
+                        help="Pin the FK column for an object property "
+                             "(repeatable), e.g. Application.submittedBy=user_id; "
+                             "auto-detected by value overlap when omitted")
     p_abox.add_argument("--threshold", type=float, default=0.6,
                         help="Match threshold: name-similarity ratio AND enum value-coverage fraction (default 0.6)")
     p_abox.add_argument("--out", help="Output dir (default: <path>/ontology)")
