@@ -10,11 +10,16 @@ from dotmd_parser import abox as A
 def _write_ontology(root: Path):
     onto = root / "ontology"; onto.mkdir()
     ir = {"meta": {"namespace": "https://ex.org/o#", "prefix": "ex"},
-          "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"}],
+          "classes": [{"name": "Application", "label_ja": "申請", "domain_group": "取引"},
+                      {"name": "Member", "label_ja": "会員", "domain_group": "顧客"}],
           "datatype_properties": [
               {"name": "feeRate", "domain": "Application", "type": "decimal", "label_ja": "手数料率"},
               {"name": "applicationStatus", "domain": "Application", "type": "string", "label_ja": "状態"},
-              {"name": "requestedAmount", "domain": "Application", "type": "decimal", "label_ja": "申請額"}]}
+              {"name": "requestedAmount", "domain": "Application", "type": "decimal", "label_ja": "申請額"},
+              {"name": "entityType", "domain": "Member", "type": "string", "label_ja": "個人法人"}],
+          "object_properties": [
+              {"name": "submittedBy", "from": "Application", "to": "Member",
+               "cardinality": "多:1", "characteristics": ["Functional"]}]}
     (onto / "ontology.json").write_text(json.dumps(ir), encoding="utf-8")
 
 
@@ -86,7 +91,7 @@ class TestMatchMaterialize(unittest.TestCase):
         rows = [{"fee_rate": "0.05", "applicationStatus": "買取成立", "note": "x"},
                 {"fee_rate": "", "applicationStatus": "謝絶", "note": ""}]
         prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
-        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        lines, count, _ = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
         text = "\n".join(lines)
         self.assertEqual(count, 2)
         self.assertIn("ex:Application_1 a ex:Application ;", text)
@@ -100,11 +105,55 @@ class TestMatchMaterialize(unittest.TestCase):
         # row where the only matched column is empty -> block is just the type line, terminated with .
         rows = [{"fee_rate": "", "applicationStatus": "", "note": "x"}]
         prop_col = {"feeRate": "fee_rate", "applicationStatus": "applicationStatus"}
-        lines, count = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
+        lines, count, _ = A.materialize_class("Application", self._dprops(), prop_col, rows, "ex")
         text = "\n".join(lines)
         self.assertEqual(count, 1)
         self.assertIn("ex:Application_1 a ex:Application .", text)   # terminated on type line
         self.assertNotIn("ex:feeRate", text)                          # no property lines
+
+
+class TestMaterializeKeyed(unittest.TestCase):
+    def _dprops(self):
+        return [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
+
+    def test_unkeyed_returns_rowindex_and_empty_keyinfo(self):
+        rows = [{"feeRate": "0.03"}, {"feeRate": "0.05"}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", self._dprops(), {"feeRate": "feeRate"}, rows, "ex")
+        self.assertEqual(count, 2)
+        self.assertIn("ex:Application_1 a ex:Application ;", lines)
+        self.assertEqual(keyinfo, {"keys": set(), "duplicate_ids": 0,
+                                   "missing_id_rows": 0})
+
+    def test_keyed_uses_id_column(self):
+        rows = [{"deal_id": "D1", "feeRate": "0.03"},
+                {"deal_id": "D2", "feeRate": "0.05"}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", self._dprops(), {"feeRate": "feeRate"}, rows, "ex",
+            id_col="deal_id")
+        self.assertIn("ex:Application_D1 a ex:Application ;", lines)
+        self.assertEqual(keyinfo["keys"], {"D1", "D2"})
+
+    def test_keyed_duplicate_and_missing_counted(self):
+        rows = [{"deal_id": "D1"}, {"deal_id": "D1"}, {"deal_id": ""}]
+        lines, count, keyinfo = A.materialize_class(
+            "Application", [], {}, rows, "ex", id_col="deal_id")
+        self.assertEqual(keyinfo["keys"], {"D1"})
+        self.assertEqual(keyinfo["duplicate_ids"], 1)
+        self.assertEqual(keyinfo["missing_id_rows"], 1)
+        self.assertIn("ex:Application__row3 a ex:Application .", lines)
+
+    def test_load_object_props(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); (root / "ontology").mkdir()
+            ir = {"meta": {"namespace": "https://ex.org/o#", "prefix": "ex"},
+                  "classes": [], "datatype_properties": [],
+                  "object_properties": [
+                      {"name": "submittedBy", "from": "Application", "to": "Member"}]}
+            (root / "ontology" / "ontology.json").write_text(
+                json.dumps(ir), encoding="utf-8")
+            ops = A.load_object_props(root)
+            self.assertEqual(ops[0]["name"], "submittedBy")
 
 
 class TestRunAbox(unittest.TestCase):
@@ -158,7 +207,7 @@ class TestAboxDeterminism(unittest.TestCase):
         dprops = [{"name": "feeRate", "domain": "Application", "type": "decimal"}]
         rows = [{"fee_rate": "0.05"}, {"fee_rate": "0.10"}]
         pc, _method = A.match_columns_to_props(dprops, ["fee_rate"], 0.6)
-        lines, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
+        lines, _, _ = A.materialize_class("Application", dprops, pc, rows, "ex")
         self.assertEqual(A.emit_abox_ttl(meta, [lines]), A.emit_abox_ttl(meta, [lines]))
 
 
@@ -257,6 +306,95 @@ class TestRunAboxValueMatch(unittest.TestCase):
             A.parse_map_cols(["Bogus.x=col"], dpc)                        # unknown class
         with self.assertRaises(ValueError):
             A.parse_map_cols(["Application.nope=col"], dpc)               # prop not a dprop
+
+
+class TestRunAboxLinks(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _write_ontology(self.root)
+        self.app = self.root / "app.csv"
+        self.mem = self.root / "mem.csv"
+        _write_csv(self.app, [
+            {"deal_id": "D1", "user_id": "7834", "feeRate": "0.03"},
+            {"deal_id": "D2", "user_id": "9001", "feeRate": "0.05"},
+            {"deal_id": "D3", "user_id": "9999", "feeRate": "0.02"}])  # 9999 dangling
+        _write_csv(self.mem, [
+            {"user_id": "7834", "entityType": "a_個人"},
+            {"user_id": "9001", "entityType": "b_法人"}])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_links_emitted_and_reported(self):
+        res = A.run_abox(
+            self.root,
+            {"Application": str(self.app), "Member": str(self.mem)},
+            id_cols={"Application": "deal_id", "Member": "user_id"},
+            links={})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        self.assertIn("ex:Application_D1 ex:submittedBy ex:Member_7834 .", ttl)
+        self.assertNotIn("ex:Member_9999", ttl)
+        ol = res["findings"]["object_links"]
+        self.assertEqual(len(ol), 1)
+        self.assertEqual(ol[0]["property"], "submittedBy")
+        self.assertEqual(ol[0]["emitted"], 2)
+        self.assertEqual(ol[0]["dangling"], 1)
+        # per-class key report
+        apprep = next(c for c in res["findings"]["classes"] if c["class"] == "Application")
+        self.assertEqual(apprep["id_col"], "deal_id")
+        self.assertEqual(apprep["duplicate_ids"], 0)
+
+    def test_backward_compat_no_idcols(self):
+        res = A.run_abox(self.root,
+                         {"Application": str(self.app), "Member": str(self.mem)})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        self.assertIn("ex:Application_1 a ex:Application ;", ttl)
+        self.assertNotIn("ex:submittedBy", ttl)
+        self.assertEqual(res["findings"]["object_links"], [])
+
+    def test_idcol_missing_column_raises(self):
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root,
+                       {"Application": str(self.app), "Member": str(self.mem)},
+                       id_cols={"Application": "nope"})
+
+    def test_explicit_link_missing_column_raises(self):
+        with self.assertRaises(ValueError):
+            A.run_abox(self.root,
+                       {"Application": str(self.app), "Member": str(self.mem)},
+                       id_cols={"Member": "user_id"},
+                       links={("Application", "submittedBy"): "nope"})
+
+    def test_no_idcol_ttl_is_byte_stable_golden(self):
+        """Golden/characterization test: with no --id-col/--link, the emitted
+        TTL format must stay byte-identical to the pre-links (v4c) output.
+        If this test fails, the no-flags TTL format has drifted -- update the
+        golden string deliberately, don't just paste the new output blindly.
+        """
+        csv_path = self.root / "app_golden.csv"
+        _write_csv(csv_path, [
+            {"feeRate": "0.05", "applicationStatus": "OK"},
+            {"feeRate": "0.10", "applicationStatus": "NG"}])
+        res = A.run_abox(self.root, {"Application": str(csv_path)})
+        ttl = (self.root / "ontology" / "ontology-abox.ttl").read_text(encoding="utf-8")
+        expected = (
+            '@prefix ex: <https://ex.org/o#> .\n'
+            '@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n'
+            '\n'
+            'ex:Application_1 a ex:Application ;\n'
+            '    ex:feeRate "0.05"^^xsd:decimal ;\n'
+            '    ex:applicationStatus "OK"^^xsd:string .\n'
+            '\n'
+            'ex:Application_2 a ex:Application ;\n'
+            '    ex:feeRate "0.10"^^xsd:decimal ;\n'
+            '    ex:applicationStatus "NG"^^xsd:string .\n'
+        )
+        self.assertEqual(ttl, expected)
+        self.assertNotIn("__row", ttl)
+        self.assertNotIn("# object-property links", ttl)
+        self.assertNotIn(" ex:submittedBy ", ttl)
+        self.assertEqual(res["findings"]["object_links"], [])
 
 
 if __name__ == "__main__":

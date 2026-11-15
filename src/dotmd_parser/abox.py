@@ -1,9 +1,11 @@
-"""dotmd-parser — ABox generation: materialize class instances from CSV data (v4c).
+"""dotmd-parser — ABox generation: materialize class instances + object links from CSV data (v4c).
 
 Maps each CSV (via explicit --map Class=file) to an ontology class, auto-matches
-CSV columns to the class's datatype properties by name similarity, and emits an
-instances TTL (datatype-property literals only). stdlib generation, deterministic;
-reads the ontology, writes only ontology-abox.* — never mutates the ontology.
+CSV columns to the class's datatype properties, and emits an instances TTL. With
+--id-col, instances are keyed by a natural id column; object-property links are
+then materialized between keyed classes via foreign keys (see abox_links.py).
+stdlib generation, deterministic; reads the ontology, writes only
+ontology-abox.* — never mutates the ontology.
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ import json
 import re
 from pathlib import Path
 
+from dotmd_parser.abox_links import subject_uri, materialize_links
 from dotmd_parser.enums import load_vocabularies
 from dotmd_parser.ontology import XSD_MAP
 
@@ -38,6 +41,13 @@ def load_class_dprops(directory) -> tuple[dict, set, dict]:
     for dp in ir.get("datatype_properties", []):
         dprops_by_class.setdefault(dp.get("domain"), []).append(dp)
     return {"namespace": meta["namespace"], "prefix": meta["prefix"]}, class_names, dprops_by_class
+
+
+def load_object_props(directory) -> list[dict]:
+    """Return the IR's object_properties list (empty if absent)."""
+    path = Path(directory).resolve() / "ontology" / "ontology.json"
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    return ir.get("object_properties", []) if isinstance(ir, dict) else []
 
 
 def parse_maps(map_args, class_names) -> dict[str, str]:
@@ -137,12 +147,23 @@ def _lit(value: str, xsd_type: str) -> str:
     return f'"{_esc(value)}"^^{XSD_MAP.get(xsd_type, "xsd:string")}'
 
 
-def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[list[str], int]:
+def materialize_class(class_name, dprops, prop_col_map, rows, prefix,
+                      id_col=None) -> tuple[list[str], int, dict]:
     lines: list[str] = []
     count = 0
+    keys: set[str] = set()
+    duplicate_ids = 0
+    missing_id_rows = 0
     for i, row in enumerate(rows, start=1):
         count += 1
-        subj = f"{prefix}:{class_name}_{i}"
+        subj, key = subject_uri(prefix, class_name, row, i, id_col)
+        if id_col is not None:
+            if key is None:
+                missing_id_rows += 1
+            else:
+                if key in keys:
+                    duplicate_ids += 1
+                keys.add(key)
         lines.append(f"{subj} a {prefix}:{class_name} ;")
         for dp in dprops:
             col = prop_col_map.get(dp["name"])
@@ -153,7 +174,9 @@ def materialize_class(class_name, dprops, prop_col_map, rows, prefix) -> tuple[l
                 lines.append(f"    {prefix}:{dp['name']} {_lit(val, dp.get('type'))} ;")
         lines[-1] = lines[-1].rstrip(" ;") + " ."   # terminate the subject block
         lines.append("")
-    return lines, count
+    keyinfo = {"keys": keys, "duplicate_ids": duplicate_ids,
+               "missing_id_rows": missing_id_rows}
+    return lines, count, keyinfo
 
 
 _ABOX_TTL = "ontology-abox.ttl"
@@ -175,15 +198,19 @@ def format_abox_summary(findings: dict) -> str:
             f"warnings={len(findings['warnings'])}")
 
 
-def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dict:
+def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None,
+             id_cols=None, links=None) -> dict:
     meta, class_names, dprops_by_class = load_class_dprops(directory)
     prefix = meta["prefix"]
     vocab_values = {v["name"]: {x.strip() for x in (v.get("values") or []) if x and x.strip()}
                     for v in load_vocabularies(directory)}
     map_cols = map_cols or {}
+    id_cols = id_cols or {}
+    links = links or {}
     class_reports = []
     warnings: list[str] = []
     blocks: list[list[str]] = []
+    class_ctx: dict[str, dict] = {}
     for cls, file in maps.items():
         try:
             with open(file, "r", encoding="utf-8-sig", newline="") as f:
@@ -197,28 +224,53 @@ def run_abox(directory, maps, threshold=0.6, out_dir=None, map_cols=None) -> dic
         for prop, col in explicit.items():
             if col not in fieldnames:
                 raise ValueError(
-                    f"--map-col {cls}.{prop}: column {col!r} not found in {file}"
-                )
+                    f"--map-col {cls}.{prop}: column {col!r} not found in {file}")
+        id_col = id_cols.get(cls)
+        if id_col is not None and id_col not in fieldnames:
+            raise ValueError(f"--id-col {cls}: column {id_col!r} not found in {file}")
         columns_values = {col: {(r.get(col) or "").strip() for r in rows if (r.get(col) or "").strip()}
                           for col in fieldnames}
         prop_col, method = match_columns_to_props(
             dprops, fieldnames, threshold,
             columns_values=columns_values, vocab_values=vocab_values,
             explicit=explicit)
-        lines, count = materialize_class(cls, dprops, prop_col, rows, prefix)
+        lines, count, keyinfo = materialize_class(cls, dprops, prop_col, rows, prefix,
+                                                  id_col=id_col)
         blocks.append(lines)
+        class_ctx[cls] = {"keyed": id_col is not None, "id_col": id_col,
+                          "keys": keyinfo["keys"], "rows": rows,
+                          "columns_values": columns_values}
         unmatched = [dp["name"] for dp in dprops if dp["name"] not in prop_col]
         if not prop_col:
             warnings.append(f"class {cls} matched no columns; only rdf:type materialized")
         class_reports.append({"class": cls, "file": str(file), "instances": count,
                               "matched": prop_col, "match_method": method,
-                              "unmatched_props": unmatched})
+                              "unmatched_props": unmatched, "id_col": id_col,
+                              "duplicate_ids": keyinfo["duplicate_ids"],
+                              "missing_id_rows": keyinfo["missing_id_rows"]})
+
+    # validate explicit link columns exist in their source CSVs
+    for (src, prop), col in links.items():
+        if src in class_ctx and col not in class_ctx[src]["columns_values"]:
+            raise ValueError(
+                f"--link {src}.{prop}: column {col!r} not found in {maps.get(src)}")
+
+    # Link pass runs only when at least one class is keyed; with no --id-col the
+    # output stays byte-identical to current v4c (object_links == []).
+    oprops = load_object_props(directory)
+    if id_cols:
+        link_lines, object_links = materialize_links(oprops, class_ctx, links, threshold, prefix)
+    else:
+        link_lines, object_links = [], []
+    if link_lines:
+        blocks.append(link_lines)
 
     findings = {
         "meta": {"audited": "ontology/ontology.json", "namespace": meta["namespace"],
                  "prefix": prefix, "threshold": threshold,
                  "generated_by": "dotmd-parser ontology-abox v4c"},
         "classes": class_reports,
+        "object_links": object_links,
         "warnings": warnings,
     }
     out = Path(out_dir) if out_dir else (Path(directory).resolve() / "ontology")
